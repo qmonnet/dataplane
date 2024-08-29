@@ -1,0 +1,36 @@
+[package]
+name = "dpdk"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["serde", "tracing_max_level_trace", "tracing_release_max_level_debug"]
+serde = ["dep:serde"]
+_dev = ["_fake_kani"]
+_fake_kani = [] # for internal use only
+
+tracing_max_level_debug = ["tracing/max_level_debug"]
+tracing_max_level_error = ["tracing/max_level_error"]
+tracing_max_level_info = ["tracing/max_level_info"]
+tracing_max_level_off = ["tracing/max_level_off"]
+tracing_max_level_trace = ["tracing/max_level_trace"]
+tracing_max_level_warn = ["tracing/max_level_warn"]
+
+tracing_release_max_level_debug = ["tracing/release_max_level_debug"]
+tracing_release_max_level_error = ["tracing/release_max_level_error"]
+tracing_release_max_level_info = ["tracing/release_max_level_info"]
+tracing_release_max_level_off = ["tracing/release_max_level_off"]
+tracing_release_max_level_trace = ["tracing/release_max_level_trace"]
+tracing_release_max_level_warn = ["tracing/release_max_level_warn"]
+
+[dependencies]
+
+dpdk-sys = { path = "../dpdk-sys" }
+errno = { path = "../errno" }
+net = { path = "../net" }
+
+etherparse = { workspace = true, default-features = false, features = [] }
+serde = { workspace = true, optional = true }
+syscalls = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true, features = ["attributes"] }

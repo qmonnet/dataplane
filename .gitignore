@@ -1,0 +1,5 @@
+**/result*/**
+**/target/**
+/result*
+/target/**
+/dpdk-sys/sysroot/**

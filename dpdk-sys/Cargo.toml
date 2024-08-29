@@ -1,0 +1,10 @@
+[package]
+name = "dpdk-sys"
+version = "0.0.1"
+edition = "2021"
+description = "Low-level bindings to the Data Plane Development Kit (DPDK)"
+
+[build-dependencies]
+bindgen = { workspace = true, features = ["runtime"] }
+cc = { workspace = true }
+doxygen-rs = { workspace = true }
