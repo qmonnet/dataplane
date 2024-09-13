@@ -2,4 +2,5 @@
 **/target/**
 /result*
 /target/**
+/design-docs/src/mdbook/book/**
 /dpdk-sys/sysroot/**
