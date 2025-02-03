@@ -37,7 +37,7 @@ hugepages_1g := "8"
 hugepages_2m := "1024"
 _just_debuggable_ := if debug == "true" { "set -x" } else { "" }
 target := "x86_64-unknown-linux-gnu"
-profile := "dev"
+profile := "debug"
 _container_repo := "ghcr.io/githedgehog/dataplane"
 rust := "stable"
 _dpdk_sys_container_repo := "ghcr.io/githedgehog/dpdk-sys"
