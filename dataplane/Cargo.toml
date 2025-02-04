@@ -10,5 +10,7 @@ license = "Apache-2.0"
 ctrlc = { workspace = true, features = ["termination"] }
 net = { workspace = true }
 dpdk = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_yaml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["default"] }

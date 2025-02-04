@@ -11,6 +11,8 @@ use net::packet::Packet;
 use net::parse::Parse;
 use tracing::{info, warn};
 
+mod nat;
+
 #[global_allocator]
 static GLOBAL_ALLOCATOR: RteAllocator = RteAllocator::new_uninitialized();
 
