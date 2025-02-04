@@ -108,6 +108,7 @@ struct Vpc {
     vni: u32,
     #[serde(skip)]
     // SMATOV: TMP: Skip serialization of PIF table cause its not present in the YAML
+    #[allow(dead_code)]
     pif_table: PifTable,
 }
 
@@ -198,6 +199,7 @@ impl<'de> Deserialize<'de> for PifTable {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct GlobalContext {
     vpcs: HashMap<String, Vpc>,
     global_pif_trie: PrefixTrie<u8, String>, // Global PIF lookup by IP
