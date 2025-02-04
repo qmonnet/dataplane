@@ -223,7 +223,7 @@ impl GlobalContext {
                 .map_or(false, |ext| ext == "yaml" || ext == "yml")
             {
                 let file_content = fs::read_to_string(&file_path).expect("Failed to read file");
-                let vpc: Vpc = serde_yaml::from_str(&file_content).expect("Failed to parse YAML");
+                let vpc: Vpc = serde_yml::from_str(&file_content).expect("Failed to parse YAML");
                 self.vpcs.insert(vpc.name.clone(), vpc);
             }
         }
@@ -240,7 +240,7 @@ impl GlobalContext {
                 .map_or(false, |ext| ext == "yaml" || ext == "yml")
             {
                 let file_content = fs::read_to_string(&file_path).expect("Failed to read file");
-                let pif: Pif = serde_yaml::from_str(&file_content).expect("Failed to parse YAML");
+                let pif: Pif = serde_yml::from_str(&file_content).expect("Failed to parse YAML");
 
                 if let Some(vpc) = self.vpcs.get_mut(&pif.vpc) {
                     vpc.pif_table.add_pif(pif.clone());

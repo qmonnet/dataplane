@@ -11,6 +11,6 @@ ctrlc = { workspace = true, features = ["termination"] }
 net = { workspace = true }
 dpdk = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_yaml = { workspace = true }
+serde_yml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["default"] }
