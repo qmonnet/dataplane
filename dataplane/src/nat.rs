@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Open Network Fabric Authors
 
+use net::vxlan::Vni;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -105,7 +106,7 @@ where
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct Vpc {
     name: String,
-    vni: u32,
+    vni: Vni,
     #[serde(skip)]
     // SMATOV: TMP: Skip serialization of PIF table cause its not present in the YAML
     #[allow(dead_code)]
@@ -114,7 +115,7 @@ struct Vpc {
 
 impl Vpc {
     #[tracing::instrument(level = "trace")]
-    fn new(name: String, vni: u32) -> Self {
+    fn new(name: String, vni: Vni) -> Self {
         Self {
             name,
             vni,

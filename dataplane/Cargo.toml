@@ -8,7 +8,7 @@ license = "Apache-2.0"
 [dependencies]
 
 ctrlc = { workspace = true, features = ["termination"] }
-net = { workspace = true }
+net = { workspace = true, features = ["serde"] }
 dpdk = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_yml = { workspace = true }
