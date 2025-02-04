@@ -56,7 +56,7 @@ impl UdpPort {
     #[must_use]
     #[allow(unsafe_code)] // safety requirements documented
     pub const unsafe fn new_unchecked(port: u16) -> UdpPort {
-        UdpPort(NonZero::new_unchecked(port))
+        UdpPort(unsafe { NonZero::new_unchecked(port) })
     }
 }
 

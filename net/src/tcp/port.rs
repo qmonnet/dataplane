@@ -46,7 +46,7 @@ impl TcpPort {
     /// Submitting a zero value as port is undefined behavior.
     #[allow(unsafe_code)]
     pub const unsafe fn new_unchecked(port: u16) -> TcpPort {
-        TcpPort(NonZero::new_unchecked(port))
+        TcpPort(unsafe { NonZero::new_unchecked(port) })
     }
 }
 
