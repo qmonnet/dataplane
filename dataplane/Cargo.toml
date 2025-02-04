@@ -14,3 +14,6 @@ serde = { workspace = true, features = ["derive"] }
 serde_yml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["default"] }
+
+[dev-dependencies]
+tracing-test = { workspace = true }

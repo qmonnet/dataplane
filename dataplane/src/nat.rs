@@ -8,6 +8,7 @@ use std::fmt::Debug;
 use std::fs;
 use std::hash::Hash;
 use std::net::IpAddr;
+use std::path::Path;
 use tracing::{error, warn};
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -216,7 +217,7 @@ impl GlobalContext {
     }
 
     #[tracing::instrument(level = "info")]
-    fn load_vpcs(&mut self, directory: &str) {
+    fn load_vpcs(&mut self, directory: &Path) {
         let paths = fs::read_dir(directory).expect("Failed to read VPCs directory");
 
         for entry in paths.flatten() {
@@ -233,7 +234,7 @@ impl GlobalContext {
     }
 
     #[tracing::instrument(level = "info")]
-    fn load_pifs(&mut self, directory: &str) {
+    fn load_pifs(&mut self, directory: &Path) {
         let paths = fs::read_dir(directory).expect("Failed to read PIFs directory");
 
         for entry in paths.flatten() {
@@ -275,7 +276,7 @@ impl GlobalContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tracing::{error, info, warn};
+    use tracing::{info, warn};
     use tracing_test::traced_test;
 
     #[test]
@@ -288,8 +289,8 @@ mod tests {
             pwd = std::env::current_dir().unwrap().display()
         );
         // Load VPCs and PIFs
-        context.load_vpcs("vpcs");
-        context.load_pifs("pifs");
+        context.load_vpcs(&Path::new("src").join("nat").join("vpcs").as_path());
+        context.load_pifs(&Path::new("src").join("nat").join("pifs").as_path());
 
         // Example global lookup
         let ip: IpAddr = "11.11.0.5".parse().unwrap();
