@@ -31,10 +31,17 @@ impl Ipv4 {
     #[allow(unsafe_code)] // const-eval and trivially safe
     pub const MAX_LEN: NonZero<usize> = unsafe { NonZero::new_unchecked(60) };
 
+    /// Create a new IPv4 header
+    pub(crate) fn new(header: Ipv4Header) -> Result<Self, Ipv4Error> {
+        UnicastIpv4Addr::new(Ipv4Addr::from(header.source))
+            .map_err(Ipv4Error::InvalidSourceAddr)?;
+        Ok(Self(header))
+    }
+
     /// Get the source ip address of the header
     #[must_use]
-    pub fn source(&self) -> Ipv4Addr {
-        Ipv4Addr::from(self.0.source)
+    pub fn source(&self) -> UnicastIpv4Addr {
+        UnicastIpv4Addr::new(Ipv4Addr::from(self.0.source)).unwrap_or_else(|_| unreachable!())
     }
 
     /// Get the destination ip address of the header
@@ -132,6 +139,8 @@ impl Ipv4 {
     ///
     /// This method does not check to ensure that the source is valid.
     /// For example, a multicast source can be assigned to a packet with this method.
+    ///
+    /// Note(manish) Why do we even have this function?
     #[allow(unsafe_code)]
     pub unsafe fn set_source_unchecked(&mut self, source: Ipv4Addr) -> &mut Self {
         self.0.source = source.octets();
@@ -236,11 +245,22 @@ impl Ipv4 {
 #[error("ttl is already zero")]
 pub struct TtlAlreadyZero;
 
-impl Parse for Ipv4 {
-    type Error = etherparse::err::ipv4::HeaderSliceError;
+/// Error which is triggered during construction of an [`Ipv4`] object.
+#[derive(thiserror::Error, Debug)]
+pub enum Ipv4Error {
+    /// Source address is invalid because it is multicast.
+    #[error("multicast source forbidden (received {0})")]
+    InvalidSourceAddr(Ipv4Addr),
+    /// Error triggered when etherparse fails to parse the header.
+    #[error(transparent)]
+    Invalid(etherparse::err::ipv4::HeaderSliceError),
+}
 
+impl Parse for Ipv4 {
+    type Error = Ipv4Error;
     fn parse(buf: &[u8]) -> Result<(Self, NonZero<usize>), ParseError<Self::Error>> {
-        let (etherparse_header, rest) = Ipv4Header::from_slice(buf).map_err(ParseError::Invalid)?;
+        let (etherparse_header, rest) =
+            Ipv4Header::from_slice(buf).map_err(|e| ParseError::Invalid(Ipv4Error::Invalid(e)))?;
         assert!(
             rest.len() < buf.len(),
             "rest.len() >= buf.len() ({rest} >= {buf})",
@@ -248,7 +268,10 @@ impl Parse for Ipv4 {
             buf = buf.len()
         );
         let consumed = NonZero::new(buf.len() - rest.len()).ok_or_else(|| unreachable!())?;
-        Ok((Self(etherparse_header), consumed))
+        Ok((
+            Self::new(etherparse_header).map_err(ParseError::Invalid)?,
+            consumed,
+        ))
     }
 }
 
@@ -393,7 +416,7 @@ mod contract {
 #[allow(clippy::unwrap_used, clippy::expect_used)] // valid in test code
 #[cfg(test)]
 mod test {
-    use crate::ipv4::Ipv4;
+    use crate::ipv4::{Ipv4, Ipv4Error};
     use crate::parse::{DeParse, Parse, ParseError};
     use etherparse::err::ipv4::{HeaderError, HeaderSliceError};
 
@@ -435,12 +458,15 @@ mod test {
                             assert!(e.expected.get() < slice.len());
                             assert_eq!(e.actual, slice.len());
                         }
-                        ParseError::Invalid(HeaderSliceError::Content(
+                        ParseError::Invalid(Ipv4Error::InvalidSourceAddr(source)) => {
+                            assert!(source.is_multicast());
+                        }
+                        ParseError::Invalid(Ipv4Error::Invalid(HeaderSliceError::Content(
                             HeaderError::UnexpectedVersion { version_number },
-                        )) => assert_ne!(version_number, 4),
-                        ParseError::Invalid(HeaderSliceError::Content(
+                        ))) => assert_ne!(version_number, 4),
+                        ParseError::Invalid(Ipv4Error::Invalid(HeaderSliceError::Content(
                             HeaderError::HeaderLengthSmallerThanHeader { ihl },
-                        )) => {
+                        ))) => {
                             // Remember, ihl is given in units of 4-byte values.
                             // The minimum header is 5 * 4 = 20 bytes.
                             assert!(((4 * ihl) as usize) < Ipv4::MIN_LEN.get());
