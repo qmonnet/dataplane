@@ -29,10 +29,21 @@ impl Ipv6 {
     #[allow(unsafe_code)]
     pub const MIN_LEN: NonZero<usize> = unsafe { NonZero::new_unchecked(40) };
 
+    /// Create a new [`Ipv6`] header
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Ipv6Error::InvalidSourceAddr`] error if the source address is invalid.
+    pub fn new(header: Ipv6Header) -> Result<Self, Ipv6Error> {
+        UnicastIpv6Addr::new(Ipv6Addr::from(header.source))
+            .map_err(Ipv6Error::InvalidSourceAddr)?;
+        Ok(Self(header))
+    }
+
     /// Get the source [`Ipv6Addr`] for this header
     #[must_use]
-    pub fn source(&self) -> Ipv6Addr {
-        Ipv6Addr::from(self.0.source)
+    pub fn source(&self) -> UnicastIpv6Addr {
+        UnicastIpv6Addr::new(Ipv6Addr::from(self.0.source)).unwrap_or_else(|_| unreachable!())
     }
 
     /// Get the destination [`Ipv6Addr`] for this header
@@ -79,22 +90,12 @@ impl Ipv6 {
 
     /// Set the source ip address of this header (confirming that this is a legal source ip).
     ///
-    /// # Errors
-    ///
-    /// Will return a [`MulticastSourceForbidden`] error if you supply a multicast ip as the source.
-    pub fn set_source_checked(&mut self, source: Ipv6Addr) -> Result<(), MulticastSourceForbidden> {
-        if source.is_multicast() {
-            return Err(MulticastSourceForbidden);
-        }
-        self.0.source = source.octets();
-        Ok(())
-    }
-
-    /// Set the source ip address of this header
-    ///
     /// # Safety
     ///
-    /// Does not confirm that the header's ip is unicast
+    /// This method does not check to ensure that the source is valid.
+    /// For example, a multicast source can be assigned to a packet with this method.
+    ///
+    /// Note(manish) Why do we even have this function?
     #[allow(unsafe_code)]
     pub unsafe fn set_source_unchecked(&mut self, source: Ipv6Addr) -> &mut Self {
         self.0.source = source.octets();
@@ -164,14 +165,6 @@ impl Ipv6 {
     }
 }
 
-/// An error which occurs if you attempt to set the source ip address of an [`Ipv6`] header to a
-/// multicast address.
-#[repr(transparent)]
-#[non_exhaustive]
-#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
-#[error("multicast source forbidden")]
-pub struct MulticastSourceForbidden;
-
 /// An error which occurs if you attempt to decrement the hop limit of an [`Ipv6`] header when the
 /// hop limit is already zero.
 #[repr(transparent)]
@@ -180,8 +173,19 @@ pub struct MulticastSourceForbidden;
 #[error("hop limit already zero")]
 pub struct HopLimitAlreadyZeroError;
 
+/// Error which is triggered during construction of an [`Ipv6`] object.
+#[derive(thiserror::Error, Debug)]
+pub enum Ipv6Error {
+    /// Source address is invalid because it is multicast.
+    #[error("multicast source forbidden (received {0})")]
+    InvalidSourceAddr(Ipv6Addr),
+    /// Error triggered when etherparse fails to parse the header.
+    #[error(transparent)]
+    Invalid(etherparse::err::ipv6::HeaderSliceError),
+}
+
 impl Parse for Ipv6 {
-    type Error = etherparse::err::ipv6::HeaderSliceError;
+    type Error = Ipv6Error;
 
     fn parse(buf: &[u8]) -> Result<(Self, NonZero<usize>), ParseError<Self::Error>> {
         if buf.len() < Ipv6::MIN_LEN.get() {
@@ -190,7 +194,8 @@ impl Parse for Ipv6 {
                 actual: buf.len(),
             }));
         }
-        let (inner, rest) = Ipv6Header::from_slice(buf).map_err(ParseError::Invalid)?;
+        let (header, rest) =
+            Ipv6Header::from_slice(buf).map_err(|e| ParseError::Invalid(Ipv6Error::Invalid(e)))?;
         assert!(
             rest.len() < buf.len(),
             "rest.len() >= buf.len() ({rest} >= {buf})",
@@ -198,7 +203,7 @@ impl Parse for Ipv6 {
             buf = buf.len()
         );
         let consumed = NonZero::new(buf.len() - rest.len()).ok_or_else(|| unreachable!())?;
-        Ok((Self(inner), consumed))
+        Ok((Self::new(header).map_err(ParseError::Invalid)?, consumed))
     }
 }
 
@@ -442,7 +447,7 @@ mod contract {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod test {
-    use crate::ipv6::Ipv6;
+    use crate::ipv6::{Ipv6, Ipv6Error};
     use crate::parse::{DeParse, Parse, ParseError};
     use etherparse::err::ipv6::{HeaderError, HeaderSliceError};
 
@@ -464,9 +469,13 @@ mod test {
             .for_each(|slice: &[u8; Ipv6::MIN_LEN.get()]| {
                 let (header, bytes_read) = match Ipv6::parse(slice) {
                     Ok((header, bytes_read)) => (header, bytes_read),
-                    Err(ParseError::Invalid(HeaderSliceError::Content(
+                    Err(ParseError::Invalid(Ipv6Error::InvalidSourceAddr(source))) => {
+                        assert!(source.is_multicast());
+                        return;
+                    }
+                    Err(ParseError::Invalid(Ipv6Error::Invalid(HeaderSliceError::Content(
                         HeaderError::UnexpectedVersion { version_number },
-                    ))) => {
+                    )))) => {
                         assert_ne!(version_number, 6);
                         return;
                     }
@@ -507,9 +516,13 @@ mod test {
             .for_each(|slice: &[u8; 4 * Ipv6::MIN_LEN.get()]| {
                 let (header, bytes_read) = match Ipv6::parse(slice) {
                     Ok((header, bytes_read)) => (header, bytes_read),
-                    Err(ParseError::Invalid(HeaderSliceError::Content(
+                    Err(ParseError::Invalid(Ipv6Error::InvalidSourceAddr(source))) => {
+                        assert!(source.is_multicast());
+                        return;
+                    }
+                    Err(ParseError::Invalid(Ipv6Error::Invalid(HeaderSliceError::Content(
                         HeaderError::UnexpectedVersion { version_number },
-                    ))) => {
+                    )))) => {
                         assert_ne!(version_number, 6);
                         return;
                     }
