@@ -23,7 +23,6 @@ pub mod addr;
 /// An IPv6 header
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ipv6(Ipv6Header);
-
 impl Ipv6 {
     /// The minimum length (in bytes) of an [`Ipv6`] header.
     // Safety: const-evaluated and trivially safe.
