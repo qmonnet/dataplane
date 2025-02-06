@@ -150,11 +150,16 @@ Because this repository uses a custom sysroot with custom libraries and binaries
 To do this, add the following to your `.vscode/settings.json` file:
 
 ```json
-{
-    "rust-analyzer.server.extraEnv": {
-        "CARGO": "<absolute path to dataplane directory>/bin/cargo"
-    }
+"rust-analyzer.server.extraEnv": {
+  "CARGO": "<absolute path to dataplane directory>/bin/cargo"
 }
+```
+
+You'll also want to run `cargo clippy` on save.
+To do this, add the following to your `.vscode/settings.json` file:
+
+```json
+"rust-analyzer.check.command": "clippy"
 ```
 
 > [!NOTE]
