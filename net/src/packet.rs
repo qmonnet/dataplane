@@ -26,11 +26,11 @@ const MAX_NET_EXTENSIONS: usize = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Packet {
-    eth: Eth,
-    net: Option<Net>,
-    transport: Option<Transport>,
-    vlan: ArrayVec<Vlan, MAX_VLANS>,
-    net_ext: ArrayVec<NetExt, MAX_NET_EXTENSIONS>,
+    pub eth: Eth,
+    pub net: Option<Net>,
+    pub transport: Option<Transport>,
+    pub vlan: ArrayVec<Vlan, MAX_VLANS>,
+    pub net_ext: ArrayVec<NetExt, MAX_NET_EXTENSIONS>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
