@@ -11,8 +11,10 @@ use dpdk::{dev, eal, socket};
 use net::packet::Packet;
 use net::parse::Parse;
 use tracing::{info, warn};
-
+mod args;
 mod nat;
+
+use args::{CmdArgs, Parser};
 
 #[global_allocator]
 static GLOBAL_ALLOCATOR: RteAllocator = RteAllocator::new_uninitialized();
@@ -30,19 +32,8 @@ fn init(args: impl IntoIterator<Item = impl AsRef<str>>) -> Eal {
 }
 
 fn main() {
-    let eal: Eal = init([
-        "--main-lcore",
-        "2",
-        "--lcores",
-        "2-4",
-        "--in-memory",
-        "--allow",
-        "0000:01:00.0,dv_flow_en=1",
-        "--huge-worker-stack=8192",
-        "--socket-mem=8192,0,0,0",
-        "--no-telemetry",
-        "--iova-mode=va",
-    ]);
+    let args = CmdArgs::parse();
+    let eal: Eal = init(args.eal_params());
 
     let (stop_tx, stop_rx) = std::sync::mpsc::channel();
     ctrlc::set_handler(move || stop_tx.send(()).expect("Error sending SIGINT signal"))
