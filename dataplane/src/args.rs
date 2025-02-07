@@ -11,7 +11,7 @@ pub(crate) struct CmdArgs {
     main_lcore: u8,
     #[arg(long, value_name = "map lcore set to cpu set")]
     lcores: Option<String>,
-    #[arg(long, value_name = "in-memory flag", default_value_t = false)]
+    #[arg(long, value_name = "in-memory flag", default_value_t = true)]
     in_memory: bool,
     #[arg(long, value_name = "PCI devices to probe")]
     allow: Vec<String>,
@@ -61,11 +61,20 @@ impl CmdArgs {
             out.push(a.to_owned());
         }
 
+        // To be removed
+        if self.allow.len() == 0 {
+            out.push("--allow".to_string());
+            out.push("0000:01:00.0,dv_flow_en=1".to_string());
+        }
+
         /* --log-level */
         for level in self.log_level.iter() {
             out.push("--log-level".to_string());
             out.push(level.to_owned());
         }
+
+        // To replace by log
+        println!("DPDK EAL init params: {:#?}", out);
 
         out
     }
