@@ -11,8 +11,6 @@ pub(crate) struct CmdArgs {
     main_lcore: u8,
     #[arg(long, value_name = "map lcore set to cpu set")]
     lcores: Option<String>,
-    #[arg(long, value_name = "in-memory flag", default_value_t = true)]
-    in_memory: bool,
     #[arg(long, value_name = "PCI devices to probe")]
     allow: Vec<String>,
     #[arg(long, value_name = "huge pages", default_value_t = 8192)]
@@ -28,6 +26,8 @@ pub(crate) struct CmdArgs {
 impl CmdArgs {
     pub fn eal_params(&self) -> Vec<String> {
         let mut out = Vec::new();
+        /* hardcoded (always) */
+        out.push("--in-memory".to_string());
 
         out.push("--main-lcore".to_owned());
         out.push(self.main_lcore.to_string());
@@ -38,10 +38,6 @@ impl CmdArgs {
                 .clone()
                 .map_or_else(|| "2-4".to_owned(), |lcores| lcores.to_owned()),
         );
-
-        if self.in_memory {
-            out.push("--in-memory".to_string());
-        }
 
         /* IOVA mode */
         out.push(format!(
