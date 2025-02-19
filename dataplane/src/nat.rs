@@ -299,10 +299,8 @@ impl GlobalContext {
 mod tests {
     use super::*;
     use tracing::{info, warn};
-    use tracing_test::traced_test;
 
     #[test]
-    #[traced_test]
     fn basic_test() {
         let mut context = GlobalContext::new();
 
