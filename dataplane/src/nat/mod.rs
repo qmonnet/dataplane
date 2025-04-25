@@ -38,8 +38,9 @@
 
 mod fabric;
 mod prefixtrie;
+mod static_nat;
 
-use crate::nat::fabric::Vrf;
+use crate::nat::static_nat::VniTable;
 use net::buffer::PacketBufferMut;
 use net::headers::Net;
 use net::headers::{TryHeadersMut, TryIpMut};
@@ -51,11 +52,11 @@ use pipeline::NetworkFunction;
 use routing::prefix::Prefix;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 
 #[derive(Debug)]
-struct GlobalContext {
-    vpcs: HashMap<u32, Vrf>,
+struct NatTables {
+    tables: HashMap<u32, VniTable>,
 }
 
 /// An object containing the [`Nat`] object state, not in terms of stateful NAT
@@ -65,17 +66,17 @@ struct GlobalContext {
 ///
 /// This context will likely change and be shared with other components in the
 /// future.
-impl GlobalContext {
+impl NatTables {
     #[tracing::instrument(level = "trace")]
     fn new() -> Self {
         Self {
-            vpcs: HashMap::new(),
+            tables: HashMap::new(),
         }
     }
 
     #[tracing::instrument(level = "trace")]
-    fn insert_vpc(&mut self, vni: Vni, vpc: Vrf) {
-        let _ = self.vpcs.insert(vni.as_u32(), vpc);
+    fn insert(&mut self, vni: Vni, table: VniTable) {
+        let _ = self.tables.insert(vni.as_u32(), table);
     }
 }
 
@@ -96,39 +97,6 @@ fn get_dst_addr(net: &Net) -> IpAddr {
     match net {
         Net::Ipv4(hdr) => IpAddr::V4(hdr.destination()),
         Net::Ipv6(hdr) => IpAddr::V6(hdr.destination()),
-    }
-}
-
-#[tracing::instrument(level = "trace")]
-fn addr_offset_in_prefix(ip: &IpAddr, prefix: &Prefix) -> Option<u128> {
-    if !prefix.covers_addr(ip) {
-        return None;
-    }
-    match (ip, prefix.as_address()) {
-        (IpAddr::V4(ip), IpAddr::V4(start)) => {
-            Some(u128::from(ip.to_bits()) - u128::from(start.to_bits()))
-        }
-        (IpAddr::V6(ip), IpAddr::V6(start)) => Some(ip.to_bits() - start.to_bits()),
-        // We can't have the prefix covering the address if we have an IP
-        // version mismatch, and we'd have returned from the function earlier.
-        _ => unreachable!(),
-    }
-}
-
-#[tracing::instrument(level = "trace")]
-fn addr_from_prefix_offset(prefix: &Prefix, offset: u128) -> Option<IpAddr> {
-    if offset >= prefix.size() {
-        return None;
-    }
-    match prefix.as_address() {
-        IpAddr::V4(start) => {
-            let bits = start.to_bits() + u32::try_from(offset).ok()?;
-            Some(IpAddr::V4(Ipv4Addr::from(bits)))
-        }
-        IpAddr::V6(start) => {
-            let bits = start.to_bits() + offset;
-            Some(IpAddr::V6(Ipv6Addr::from(bits)))
-        }
     }
 }
 
@@ -155,7 +123,7 @@ pub enum NatMode {
 /// their IP addresses.
 #[derive(Debug)]
 pub struct Nat {
-    context: GlobalContext,
+    context: NatTables,
     mode: NatMode,
     direction: NatDirection,
 }
@@ -166,7 +134,7 @@ impl Nat {
     /// whether this processor should perform stateless or stateful NAT.
     #[tracing::instrument(level = "trace")]
     pub fn new<Buf: PacketBufferMut>(direction: NatDirection, mode: NatMode) -> Self {
-        let context = GlobalContext::new();
+        let context = NatTables::new();
         Self {
             context,
             mode,
@@ -176,8 +144,8 @@ impl Nat {
 
     /// Temporary, expect this to be removed in the future.
     #[tracing::instrument(level = "trace")]
-    pub fn add_vpc(&mut self, vni: Vni, vpc: Vrf) {
-        self.context.insert_vpc(vni, vpc);
+    pub fn add_table(&mut self, vni: Vni, table: VniTable) {
+        self.context.insert(vni, table);
     }
 
     #[tracing::instrument(level = "trace")]
@@ -193,16 +161,16 @@ impl Nat {
 
     #[tracing::instrument(level = "trace")]
     fn find_src_nat_ranges(&self, net: &Net, vni: Vni) -> Option<(Prefix, &Prefix)> {
-        let vrf = self.context.vpcs.get(&vni.as_u32())?;
+        let table = self.context.tables.get(&vni.as_u32())?;
         let src_ip = &get_src_addr(net);
-        vrf.lookup_src_prefix(src_ip)
+        table.lookup_src_prefix(src_ip)
     }
 
     #[tracing::instrument(level = "trace")]
     fn find_dst_nat_ranges(&self, net: &Net, vni: Vni) -> Option<(Prefix, &Prefix)> {
-        let vrf = self.context.vpcs.get(&vni.as_u32())?;
+        let table = self.context.tables.get(&vni.as_u32())?;
         let dst_ip = &get_dst_addr(net);
-        vrf.lookup_dst_prefix(dst_ip)
+        table.lookup_dst_prefix(dst_ip)
     }
 
     #[tracing::instrument(level = "trace")]
@@ -221,8 +189,8 @@ impl Nat {
         target_range: &Prefix,
         current_ip: &IpAddr,
     ) -> Option<IpAddr> {
-        let offset = addr_offset_in_prefix(current_ip, current_range)?;
-        addr_from_prefix_offset(target_range, offset)
+        let offset = static_nat::addr_offset_in_prefix(current_ip, current_range)?;
+        static_nat::addr_from_prefix_offset(target_range, offset)
     }
 
     /// Applies network address translation to a packet, knowing the current and
@@ -320,12 +288,12 @@ mod tests {
         IpAddr::V4(Ipv4Addr::from_str(s).expect("Invalid IPv4 address"))
     }
 
-    fn build_context() -> (Vrf, Vrf, Peering) {
-        let mut vpc1 = Vrf::new(
+    fn build_context() -> (VniTable, VniTable, Peering) {
+        let mut vpc1 = VniTable::new(
             "test_vpc1".into(),
             Vni::new_checked(100).expect("Failed to create VNI"),
         );
-        let mut vpc2 = Vrf::new(
+        let mut vpc2 = VniTable::new(
             "test_vpc2".into(),
             Vni::new_checked(200).expect("Failed to create VNI"),
         );
@@ -383,8 +351,8 @@ mod tests {
             },
         );
 
-        vpc1.add_peering(&peering).expect("Failed to add peering");
-        vpc2.add_peering(&peering).expect("Failed to add peering");
+        fabric::add_peering(&mut vpc1, &peering).expect("Failed to add peering");
+        fabric::add_peering(&mut vpc2, &peering).expect("Failed to add peering");
 
         (vpc1, vpc2, peering)
     }
@@ -393,8 +361,8 @@ mod tests {
     fn test_dst_nat_stateless_44() {
         let (vpc1, vpc2, _) = build_context();
         let mut nat = Nat::new::<TestBuffer>(NatDirection::DstNat, NatMode::Stateless);
-        nat.add_vpc(Vni::new_checked(100).expect("Failed to create VNI"), vpc1);
-        nat.add_vpc(Vni::new_checked(200).expect("Failed to create VNI"), vpc2);
+        nat.add_table(Vni::new_checked(100).expect("Failed to create VNI"), vpc1);
+        nat.add_table(Vni::new_checked(200).expect("Failed to create VNI"), vpc2);
 
         let packets = vec![build_test_ipv4_packet(u8::MAX).unwrap()].into_iter();
         let packets_out: Vec<_> = nat.process(packets).collect();
@@ -412,8 +380,8 @@ mod tests {
     fn test_src_nat_stateless_44() {
         let (vpc1, vpc2, _) = build_context();
         let mut nat = Nat::new::<TestBuffer>(NatDirection::SrcNat, NatMode::Stateless);
-        nat.add_vpc(Vni::new_checked(100).expect("Failed to create VNI"), vpc1);
-        nat.add_vpc(Vni::new_checked(200).expect("Failed to create VNI"), vpc2);
+        nat.add_table(Vni::new_checked(100).expect("Failed to create VNI"), vpc1);
+        nat.add_table(Vni::new_checked(200).expect("Failed to create VNI"), vpc2);
 
         let packets = vec![build_test_ipv4_packet(u8::MAX).unwrap()].into_iter();
         let packets_out: Vec<_> = nat.process(packets).collect();

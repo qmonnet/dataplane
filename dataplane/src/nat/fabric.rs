@@ -1,63 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Open Network Fabric Authors
 
-use crate::nat::prefixtrie::{PrefixTrie, TrieError};
-use net::vxlan::Vni;
+use crate::nat::prefixtrie::TrieError;
+use crate::nat::static_nat::{NatPrefixRuleTable, VniTable};
 use routing::prefix::Prefix;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::net::IpAddr;
-
-/// From a current address prefix, find the target address prefix.
-#[derive(Debug, Clone)]
-struct NatPrefixRuleTable {
-    rules: PrefixTrie<Prefix>,
-}
-
-/// From a current address prefix, find the relevant [`NatPrefixRuleTable`] for
-/// the target prefix lookup.
-#[derive(Debug)]
-struct NatPeeringRuleTable {
-    rules: PrefixTrie<usize>,
-}
-
-impl NatPrefixRuleTable {
-    #[tracing::instrument(level = "trace")]
-    fn new() -> Self {
-        Self {
-            rules: PrefixTrie::with_roots(Prefix::root_v4(), Prefix::root_v6()),
-        }
-    }
-
-    #[tracing::instrument(level = "trace")]
-    fn insert(&mut self, key: &Prefix, value: Prefix) -> Result<(), TrieError> {
-        self.rules.insert(key, value)
-    }
-
-    #[tracing::instrument(level = "trace")]
-    fn lookup(&self, addr: &IpAddr) -> Option<(Prefix, &Prefix)> {
-        self.rules.lookup(addr)
-    }
-}
-
-impl NatPeeringRuleTable {
-    #[tracing::instrument(level = "trace")]
-    fn new() -> Self {
-        Self {
-            rules: PrefixTrie::new(),
-        }
-    }
-
-    #[tracing::instrument(level = "trace")]
-    fn insert(&mut self, prefix: &Prefix, target_index: usize) -> Result<(), TrieError> {
-        self.rules.insert(prefix, target_index)
-    }
-
-    #[tracing::instrument(level = "trace")]
-    fn find(&self, addr: &IpAddr) -> Option<usize> {
-        self.rules.find(addr).copied()
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct PeeringIps {
@@ -81,100 +29,52 @@ pub struct Peering {
     pub entries: HashMap<String, PeeringEntry>,
 }
 
-#[derive(Debug)]
-pub struct Vrf {
-    name: String,
-    vni: Vni,
-    table_dst_nat: NatPrefixRuleTable,
-    table_src_nat_peering: NatPeeringRuleTable,
-    table_src_nat_prefixes: Vec<NatPrefixRuleTable>,
-}
+#[tracing::instrument(level = "trace")]
+pub fn add_peering(vrf: &mut VniTable, peering: &Peering) -> Result<(), TrieError> {
+    peering.entries.iter().try_for_each(|(name, entry)| {
+        match name {
+            n if n == vrf.name() => {
+                // Create new peering table for source NAT
+                let mut peering_table = NatPrefixRuleTable::new();
+                entry
+                    .internal
+                    .iter()
+                    .zip(entry.external.iter())
+                    .try_for_each(|(internal, external)| {
+                        peering_table.insert(&internal.cidr, external.cidr.clone())
+                    })?;
+                vrf.table_src_nat_prefixes.push(peering_table);
 
-impl Vrf {
-    #[tracing::instrument(level = "trace")]
-    pub fn new(name: String, vni: Vni) -> Self {
-        Self {
-            name,
-            vni,
-            table_dst_nat: NatPrefixRuleTable::new(),
-            table_src_nat_peering: NatPeeringRuleTable::new(),
-            table_src_nat_prefixes: Vec::new(),
-        }
-    }
-
-    #[tracing::instrument(level = "trace")]
-    pub fn name(&self) -> &String {
-        &self.name
-    }
-
-    #[tracing::instrument(level = "trace")]
-    pub fn vni(&self) -> Vni {
-        self.vni
-    }
-
-    #[tracing::instrument(level = "trace")]
-    pub fn add_peering(&mut self, peering: &Peering) -> Result<(), TrieError> {
-        peering.entries.iter().try_for_each(|(name, entry)| {
-            match name {
-                n if *n == self.name => {
-                    // Create new peering table for source NAT
-                    let mut peering_table = NatPrefixRuleTable::new();
-                    entry
-                        .internal
-                        .iter()
-                        .zip(entry.external.iter())
-                        .try_for_each(|(internal, external)| {
-                            peering_table.insert(&internal.cidr, external.cidr.clone())
-                        })?;
-                    self.table_src_nat_prefixes.push(peering_table);
-
-                    // Update peering table to make relevant prefixes point to
-                    // the new peering table
-                    let peering_index = self.table_src_nat_prefixes.len() - 1;
-                    entry.internal.iter().try_for_each(|internal| {
-                        self.table_src_nat_peering
-                            .rules
-                            .insert(&internal.cidr, peering_index)
-                    })
-                }
-                _ => {
-                    // Update table for destination NAT
-                    entry
-                        .internal
-                        .iter()
-                        .zip(entry.external.iter())
-                        .try_for_each(|(internal, external)| {
-                            self.table_dst_nat
-                                .insert(&external.cidr, internal.cidr.clone())
-                        })
-                }
+                // Update peering table to make relevant prefixes point to
+                // the new peering table
+                let peering_index = vrf.table_src_nat_prefixes.len() - 1;
+                entry.internal.iter().try_for_each(|internal| {
+                    vrf.table_src_nat_peers
+                        .rules
+                        .insert(&internal.cidr, peering_index)
+                })
             }
-        })
-    }
-
-    #[tracing::instrument(level = "trace")]
-    pub fn lookup_src_prefix(&self, addr: &IpAddr) -> Option<(Prefix, &Prefix)> {
-        // Find relevant prefix table for involved peering
-        let peering_index = self.table_src_nat_peering.find(addr)?;
-
-        // Look up for the NAT prefix in that table
-        if let Some(table) = self.table_src_nat_prefixes.get(peering_index) {
-            table.lookup(addr)
-        } else {
-            None
+            _ => {
+                // Update table for destination NAT
+                entry
+                    .internal
+                    .iter()
+                    .zip(entry.external.iter())
+                    .try_for_each(|(internal, external)| {
+                        vrf.table_dst_nat
+                            .insert(&external.cidr, internal.cidr.clone())
+                    })
+            }
         }
-    }
-
-    #[tracing::instrument(level = "trace")]
-    pub fn lookup_dst_prefix(&self, addr: &IpAddr) -> Option<(Prefix, &Prefix)> {
-        self.table_dst_nat.lookup(addr)
-    }
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::nat::fabric;
     use iptrie::{Ipv4Prefix, Ipv6Prefix};
+    use net::vxlan::Vni;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use std::str::FromStr;
 
@@ -197,11 +97,11 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn test_fabric() {
-        let mut vpc1 = Vrf::new(
+        let mut vpc1 = VniTable::new(
             "test_vpc1".into(),
             Vni::new_checked(100).expect("Failed to create VNI"),
         );
-        let mut vpc2 = Vrf::new(
+        let mut vpc2 = VniTable::new(
             "test_vpc2".into(),
             Vni::new_checked(200).expect("Failed to create VNI"),
         );
@@ -293,8 +193,8 @@ mod tests {
 
         assert_eq!(vpc1.table_src_nat_prefixes.len(), 0);
 
-        vpc1.add_peering(&peering).expect("Failed to add peering");
-        vpc2.add_peering(&peering).expect("Failed to add peering");
+        fabric::add_peering(&mut vpc1, &peering).expect("Failed to add peering");
+        fabric::add_peering(&mut vpc2, &peering).expect("Failed to add peering");
 
         assert_eq!(vpc1.table_src_nat_prefixes.len(), 1);
 
