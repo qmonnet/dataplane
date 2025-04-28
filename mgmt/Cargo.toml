@@ -9,6 +9,7 @@ license = "Apache-2.0"
 async-trait = { workspace = true }
 derive_builder = { workspace = true }
 gateway_config = { workspace = true }
+iptrie = { workspace = true }
 net = { workspace = true }
 routing = { workspace = true }
 thiserror = { workspace = true }

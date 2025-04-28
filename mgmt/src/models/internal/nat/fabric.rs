@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Open Network Fabric Authors
 
-use crate::nat::prefixtrie::TrieError;
-use crate::nat::static_nat::{NatPrefixRuleTable, VniTable};
+use crate::models::internal::nat::prefixtrie::{PrefixTrie, TrieError};
+use crate::models::internal::nat::tables::{NatPrefixRuleTable, VniTable};
 use routing::prefix::Prefix;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -72,7 +72,7 @@ pub fn add_peering(vrf: &mut VniTable, peering: &Peering) -> Result<(), TrieErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nat::fabric;
+    use crate::models::internal::nat::tables::NatTables;
     use iptrie::{Ipv4Prefix, Ipv6Prefix};
     use net::vxlan::Vni;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -193,8 +193,8 @@ mod tests {
 
         assert_eq!(vpc1.table_src_nat_prefixes.len(), 0);
 
-        fabric::add_peering(&mut vpc1, &peering).expect("Failed to add peering");
-        fabric::add_peering(&mut vpc2, &peering).expect("Failed to add peering");
+        add_peering(&mut vpc1, &peering).expect("Failed to add peering");
+        add_peering(&mut vpc2, &peering).expect("Failed to add peering");
 
         assert_eq!(vpc1.table_src_nat_prefixes.len(), 1);
 

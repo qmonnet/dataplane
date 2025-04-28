@@ -36,11 +36,9 @@
 //!   IP addresses covered by the full set of externally-exposed IP prefixes; this
 //!   is in order to make the 1:1 address mapping work.
 
-mod fabric;
-mod prefixtrie;
 mod static_nat;
 
-use crate::nat::static_nat::VniTable;
+use mgmt::models::internal::nat::tables::{NatTables, VniTable};
 use net::buffer::PacketBufferMut;
 use net::headers::Net;
 use net::headers::{TryHeadersMut, TryIpMut};
@@ -53,32 +51,6 @@ use routing::prefix::Prefix;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::IpAddr;
-
-#[derive(Debug)]
-struct NatTables {
-    tables: HashMap<u32, VniTable>,
-}
-
-/// An object containing the [`Nat`] object state, not in terms of stateful NAT
-/// processing, but instead holding references to the different fabric objects
-/// that the [`Nat`] component uses, namely VPCs and their PIFs, and peering
-/// interfaces.
-///
-/// This context will likely change and be shared with other components in the
-/// future.
-impl NatTables {
-    #[tracing::instrument(level = "trace")]
-    fn new() -> Self {
-        Self {
-            tables: HashMap::new(),
-        }
-    }
-
-    #[tracing::instrument(level = "trace")]
-    fn insert(&mut self, vni: Vni, table: VniTable) {
-        let _ = self.tables.insert(vni.as_u32(), table);
-    }
-}
 
 /// A helper to retrieve the source IP address from a [`Net`] object,
 /// independently of the IP version.
@@ -142,10 +114,10 @@ impl Nat {
         }
     }
 
-    /// Temporary, expect this to be removed in the future.
-    #[tracing::instrument(level = "trace")]
-    pub fn add_table(&mut self, vni: Vni, table: VniTable) {
-        self.context.insert(vni, table);
+    /// Updates the VNI tables in the NAT processor.
+    #[tracing::instrument(level = "info")]
+    pub fn update_tables(&mut self, tables: NatTables) {
+        self.context = tables;
     }
 
     #[tracing::instrument(level = "trace")]
@@ -271,8 +243,10 @@ impl<Buf: PacketBufferMut> NetworkFunction<Buf> for Nat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nat::fabric::{Peering, PeeringAs, PeeringEntry, PeeringIps};
     use iptrie::Ipv4Prefix;
+    use mgmt::models::internal::nat::fabric::{
+        Peering, PeeringAs, PeeringEntry, PeeringIps, add_peering,
+    };
     use net::buffer::TestBuffer;
     use net::headers::TryIpv4;
     use net::packet::test_utils::build_test_ipv4_packet;
@@ -351,8 +325,8 @@ mod tests {
             },
         );
 
-        fabric::add_peering(&mut vpc1, &peering).expect("Failed to add peering");
-        fabric::add_peering(&mut vpc2, &peering).expect("Failed to add peering");
+        add_peering(&mut vpc1, &peering).expect("Failed to add peering");
+        add_peering(&mut vpc2, &peering).expect("Failed to add peering");
 
         (vpc1, vpc2, peering)
     }
@@ -361,8 +335,11 @@ mod tests {
     fn test_dst_nat_stateless_44() {
         let (vpc1, vpc2, _) = build_context();
         let mut nat = Nat::new::<TestBuffer>(NatDirection::DstNat, NatMode::Stateless);
-        nat.add_table(Vni::new_checked(100).expect("Failed to create VNI"), vpc1);
-        nat.add_table(Vni::new_checked(200).expect("Failed to create VNI"), vpc2);
+
+        let mut nat_tables = NatTables::new();
+        nat_tables.add_table(Vni::new_checked(100).expect("Failed to create VNI"), vpc1);
+        nat_tables.add_table(Vni::new_checked(200).expect("Failed to create VNI"), vpc2);
+        nat.update_tables(nat_tables);
 
         let packets = vec![build_test_ipv4_packet(u8::MAX).unwrap()].into_iter();
         let packets_out: Vec<_> = nat.process(packets).collect();
@@ -380,8 +357,11 @@ mod tests {
     fn test_src_nat_stateless_44() {
         let (vpc1, vpc2, _) = build_context();
         let mut nat = Nat::new::<TestBuffer>(NatDirection::SrcNat, NatMode::Stateless);
-        nat.add_table(Vni::new_checked(100).expect("Failed to create VNI"), vpc1);
-        nat.add_table(Vni::new_checked(200).expect("Failed to create VNI"), vpc2);
+
+        let mut nat_tables = NatTables::new();
+        nat_tables.add_table(Vni::new_checked(100).expect("Failed to create VNI"), vpc1);
+        nat_tables.add_table(Vni::new_checked(200).expect("Failed to create VNI"), vpc2);
+        nat.update_tables(nat_tables);
 
         let packets = vec![build_test_ipv4_packet(u8::MAX).unwrap()].into_iter();
         let packets_out: Vec<_> = nat.process(packets).collect();
