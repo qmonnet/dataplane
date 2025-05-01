@@ -36,9 +36,9 @@
 //!   IP addresses covered by the full set of externally-exposed IP prefixes; this
 //!   is in order to make the 1:1 address mapping work.
 
-mod static_nat;
+mod iplist;
 
-use mgmt::models::internal::nat::tables::{NatTables, VniTable};
+use mgmt::models::internal::nat::tables::{NatTables, TrieValue};
 use net::buffer::PacketBufferMut;
 use net::headers::Net;
 use net::headers::{TryHeadersMut, TryIpMut};
@@ -47,13 +47,10 @@ use net::ipv6::UnicastIpv6Addr;
 use net::packet::Packet;
 use net::vxlan::Vni;
 use pipeline::NetworkFunction;
-use routing::prefix::Prefix;
-use std::collections::HashMap;
-use std::fmt::Debug;
 use std::net::IpAddr;
 
-/// A helper to retrieve the source IP address from a [`Net`] object,
-/// independently of the IP version.
+/// A helper to retrieve the source IP address from a [`Net`] object, independently of the IP
+/// version.
 #[tracing::instrument(level = "trace")]
 fn get_src_addr(net: &Net) -> IpAddr {
     match net {
@@ -62,8 +59,8 @@ fn get_src_addr(net: &Net) -> IpAddr {
     }
 }
 
-/// A helper to retrieve the destination IP address from a [`Net`] object,
-/// independently of the IP version.
+/// A helper to retrieve the destination IP address from a [`Net`] object, independently of the IP
+/// version.
 #[tracing::instrument(level = "trace")]
 fn get_dst_addr(net: &Net) -> IpAddr {
     match net {
@@ -72,8 +69,7 @@ fn get_dst_addr(net: &Net) -> IpAddr {
     }
 }
 
-/// Indicates whether a [`Nat`] processor should perform source NAT or destination
-/// NAT.
+/// Indicates whether a [`Nat`] processor should perform source NAT or destination NAT.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NatDirection {
     /// Source NAT
@@ -90,9 +86,8 @@ pub enum NatMode {
     Stateful,
 }
 
-/// A NAT processor, implementing the [`NetworkFunction`] trait. [`Nat`] processes
-/// packets to run source or destination Network Address Translation (NAT) on
-/// their IP addresses.
+/// A NAT processor, implementing the [`NetworkFunction`] trait. [`Nat`] processes packets to run
+/// source or destination Network Address Translation (NAT) on their IP addresses.
 #[derive(Debug)]
 pub struct Nat {
     context: NatTables,
@@ -101,9 +96,9 @@ pub struct Nat {
 }
 
 impl Nat {
-    /// Creates a new [`Nat`] processor. The `direction` indicates whether this
-    /// processor should perform source or destination NAT. The `mode` indicates
-    /// whether this processor should perform stateless or stateful NAT.
+    /// Creates a new [`Nat`] processor. The `direction` indicates whether this processor should
+    /// perform source or destination NAT. The `mode` indicates whether this processor should
+    /// perform stateless or stateful NAT.
     #[tracing::instrument(level = "trace")]
     pub fn new<Buf: PacketBufferMut>(direction: NatDirection, mode: NatMode) -> Self {
         let context = NatTables::new();
@@ -132,21 +127,21 @@ impl Nat {
     }
 
     #[tracing::instrument(level = "trace")]
-    fn find_src_nat_ranges(&self, net: &Net, vni: Vni) -> Option<(Prefix, &Prefix)> {
+    fn find_src_nat_ranges(&self, net: &Net, vni: Vni) -> Option<&TrieValue> {
         let table = self.context.tables.get(&vni.as_u32())?;
         let src_ip = &get_src_addr(net);
         table.lookup_src_prefix(src_ip)
     }
 
     #[tracing::instrument(level = "trace")]
-    fn find_dst_nat_ranges(&self, net: &Net, vni: Vni) -> Option<(Prefix, &Prefix)> {
+    fn find_dst_nat_ranges(&self, net: &Net, vni: Vni) -> Option<&TrieValue> {
         let table = self.context.tables.get(&vni.as_u32())?;
         let dst_ip = &get_dst_addr(net);
         table.lookup_dst_prefix(dst_ip)
     }
 
     #[tracing::instrument(level = "trace")]
-    fn find_nat_ranges(&self, net: &mut Net, vni_opt: Option<Vni>) -> Option<(Prefix, &Prefix)> {
+    fn find_nat_ranges(&self, net: &mut Net, vni_opt: Option<Vni>) -> Option<&TrieValue> {
         let vni = vni_opt?;
         match self.direction {
             NatDirection::SrcNat => self.find_src_nat_ranges(net, vni),
@@ -154,31 +149,14 @@ impl Nat {
         }
     }
 
+    /// Applies network address translation to a packet, knowing the current and target ranges.
     #[tracing::instrument(level = "trace")]
-    fn map_ip(
-        &self,
-        current_range: &Prefix,
-        target_range: &Prefix,
-        current_ip: &IpAddr,
-    ) -> Option<IpAddr> {
-        let offset = static_nat::addr_offset_in_prefix(current_ip, current_range)?;
-        static_nat::addr_from_prefix_offset(target_range, offset)
-    }
-
-    /// Applies network address translation to a packet, knowing the current and
-    /// target ranges.
-    #[tracing::instrument(level = "trace")]
-    fn translate(
-        &self,
-        net: &mut Net,
-        current_range: &Prefix,
-        target_range: &Prefix,
-    ) -> Option<()> {
+    fn translate(&self, net: &mut Net, ranges: &TrieValue) -> Option<()> {
         let current_ip = match self.direction {
             NatDirection::SrcNat => get_src_addr(net),
             NatDirection::DstNat => get_dst_addr(net),
         };
-        let target_ip = self.map_ip(current_range, target_range, &current_ip)?;
+        let target_ip = iplist::map_ip(ranges, &current_ip);
 
         match self.direction {
             NatDirection::SrcNat => match (net, target_ip) {
@@ -203,9 +181,8 @@ impl Nat {
         Some(())
     }
 
-    /// Processes one packet. This is the main entry point for processing a
-    /// packet. This is also the function that we pass to [`Nat::process`] to
-    /// iterate over packets.
+    /// Processes one packet. This is the main entry point for processing a packet. This is also the
+    /// function that we pass to [`Nat::process`] to iterate over packets.
     fn process_packet<Buf: PacketBufferMut>(&self, packet: &mut Packet<Buf>) {
         if !self.nat_supported() {
             return;
@@ -220,11 +197,10 @@ impl Nat {
             return;
         };
 
-        let ranges = self.find_nat_ranges(net, vni);
-        let Some((current_range, target_range)) = ranges else {
+        let Some(ranges) = self.find_nat_ranges(net, vni) else {
             return;
         };
-        self.translate(net, &current_range, target_range);
+        self.translate(net, ranges);
     }
 }
 
@@ -244,9 +220,10 @@ impl<Buf: PacketBufferMut> NetworkFunction<Buf> for Nat {
 mod tests {
     use super::*;
     use iptrie::Ipv4Prefix;
-    use mgmt::models::internal::nat::fabric::{
-        Peering, PeeringAs, PeeringEntry, PeeringIps, add_peering,
-    };
+    use mgmt::models::external::overlay::vpc::Peering;
+    use mgmt::models::external::overlay::vpcpeering::{VpcExpose, VpcManifest};
+    use mgmt::models::internal::nat::peering;
+    use mgmt::models::internal::nat::tables::{NatTables, VniTable};
     use net::buffer::TestBuffer;
     use net::headers::TryIpv4;
     use net::packet::test_utils::build_test_ipv4_packet;
@@ -262,83 +239,107 @@ mod tests {
         IpAddr::V4(Ipv4Addr::from_str(s).expect("Invalid IPv4 address"))
     }
 
-    fn build_context() -> (VniTable, VniTable, Peering) {
-        let mut vpc1 = VniTable::new(
-            "test_vpc1".into(),
-            Vni::new_checked(100).expect("Failed to create VNI"),
-        );
-        let mut vpc2 = VniTable::new(
-            "test_vpc2".into(),
-            Vni::new_checked(200).expect("Failed to create VNI"),
-        );
+    fn build_context() -> NatTables {
+        // Build VpcExpose objects
+        //
+        //     expose:
+        //       - ips:
+        //         - cidr: 1.1.0.0/16
+        //         - cidr: 1.2.0.0/16 # <- 1.2.3.4 will match here
+        //         - not: 1.1.5.0/24
+        //         - not: 1.1.3.0/24
+        //         - not: 1.1.1.0/24
+        //         - not: 1.2.2.0/24 # to account for when computing the offset
+        //         as:
+        //         - cidr: 2.2.0.0/16
+        //         - cidr: 2.1.0.0/16 # <- corresponding target range
+        //         - not: 2.1.10.0/24
+        //         - not: 2.1.1.0/24 # to account for when fetching the address in range
+        //         - not: 2.1.8.0/24
+        //         - not: 2.1.2.0/24 # to account for when fetching the address in range
+        //       - ips:
+        //         - cidr: 3.0.0.0/16
+        //         as:
+        //         - cidr: 4.0.0.0/16
+        let expose1 = VpcExpose::empty()
+            .ip(prefix_v4("1.1.0.0/16"))
+            .not(prefix_v4("1.1.5.0/24"))
+            .not(prefix_v4("1.1.3.0/24"))
+            .not(prefix_v4("1.1.1.0/24"))
+            .ip(prefix_v4("1.2.0.0/16"))
+            .not(prefix_v4("1.2.2.0/24"))
+            .as_range(prefix_v4("2.2.0.0/16"))
+            .not_as(prefix_v4("2.1.10.0/24"))
+            .not_as(prefix_v4("2.1.1.0/24"))
+            .not_as(prefix_v4("2.1.8.0/24"))
+            .not_as(prefix_v4("2.1.2.0/24"))
+            .as_range(prefix_v4("2.1.0.0/16"));
+        let expose2 = VpcExpose::empty()
+            .ip(prefix_v4("3.0.0.0/16"))
+            .as_range(prefix_v4("4.0.0.0/16"));
 
-        let mut peering = Peering {
-            name: "test_peering".into(),
-            entries: HashMap::new(),
+        let manifest1 = VpcManifest {
+            name: "test_manifest1".into(),
+            exposes: vec![expose1, expose2],
         };
-        peering.entries.insert(
-            "test_vpc1".into(),
-            PeeringEntry {
-                internal: vec![
-                    PeeringIps {
-                        cidr: prefix_v4("1.2.3.0/24"),
-                    },
-                    PeeringIps {
-                        cidr: prefix_v4("4.5.6.0/24"),
-                    },
-                    PeeringIps {
-                        cidr: prefix_v4("7.8.9.0/24"),
-                    },
-                ],
-                external: vec![
-                    PeeringAs {
-                        cidr: prefix_v4("10.0.1.0/24"),
-                    },
-                    PeeringAs {
-                        cidr: prefix_v4("10.0.2.0/24"),
-                    },
-                    PeeringAs {
-                        cidr: prefix_v4("10.0.3.0/24"),
-                    },
-                ],
-            },
-        );
-        peering.entries.insert(
-            "test_vpc2".into(),
-            PeeringEntry {
-                internal: vec![
-                    PeeringIps {
-                        cidr: prefix_v4("9.9.0.0/16"),
-                    },
-                    PeeringIps {
-                        cidr: prefix_v4("99.99.0.0/16"),
-                    },
-                ],
-                external: vec![
-                    PeeringAs {
-                        cidr: prefix_v4("1.1.0.0/16"),
-                    },
-                    PeeringAs {
-                        cidr: prefix_v4("1.2.0.0/16"),
-                    },
-                ],
-            },
-        );
 
-        add_peering(&mut vpc1, &peering).expect("Failed to add peering");
-        add_peering(&mut vpc2, &peering).expect("Failed to add peering");
+        //     expose:
+        //       - ips:
+        //         - cidr: 8.0.0.0/17
+        //         - cidr: 9.0.0.0/17
+        //         - not: 8.0.0.0/24
+        //         as:
+        //         - cidr: 3.0.0.0/16
+        //         - not: 3.0.1.0/24
+        //       - ips:
+        //         - cidr: 10.0.0.0/16 # <- corresponding target range
+        //         - not: 10.0.1.0/24 # to account for when fetching the address in range
+        //         - not: 10.0.2.0/24 # to account for when fetching the address in range
+        //         as:
+        //         - cidr: 1.1.0.0/17
+        //         - cidr: 1.2.0.0/17 # <- 1.2.3.4 will match here
+        //         - not: 1.2.0.0/24 # to account for when computing the offset
+        //         - not: 1.2.8.0/24
+        let expose3 = VpcExpose::empty()
+            .ip(prefix_v4("8.0.0.0/17"))
+            .not(prefix_v4("8.0.0.0/24"))
+            .ip(prefix_v4("9.0.0.0/17"))
+            .as_range(prefix_v4("3.0.0.0/16"))
+            .not_as(prefix_v4("3.0.1.0/24"));
+        let expose4 = VpcExpose::empty()
+            .ip(prefix_v4("10.0.0.0/16"))
+            .not(prefix_v4("10.0.1.0/24"))
+            .not(prefix_v4("10.0.2.0/24"))
+            .as_range(prefix_v4("1.1.0.0/17"))
+            .as_range(prefix_v4("1.2.0.0/17"))
+            .not_as(prefix_v4("1.2.0.0/24"))
+            .not_as(prefix_v4("1.2.8.0/24"));
 
-        (vpc1, vpc2, peering)
+        let manifest2 = VpcManifest {
+            name: "test_manifest2".into(),
+            exposes: vec![expose3, expose4],
+        };
+
+        let peering: Peering = Peering {
+            name: "test_peering".into(),
+            local: manifest1,
+            remote: manifest2,
+        };
+
+        let vni = Vni::new_checked(100).expect("Failed to create VNI");
+        let mut vni_table = VniTable::new(vni);
+        peering::add_peering(&mut vni_table, &peering).expect("Failed to build NAT tables");
+
+        let mut nat_table = NatTables::new();
+        nat_table.add_table(vni, vni_table);
+
+        nat_table
     }
 
     #[test]
     fn test_dst_nat_stateless_44() {
-        let (vpc1, vpc2, _) = build_context();
+        let nat_tables = build_context();
         let mut nat = Nat::new::<TestBuffer>(NatDirection::DstNat, NatMode::Stateless);
-
-        let mut nat_tables = NatTables::new();
-        nat_tables.add_table(Vni::new_checked(100).expect("Failed to create VNI"), vpc1);
-        nat_tables.add_table(Vni::new_checked(200).expect("Failed to create VNI"), vpc2);
         nat.update_tables(nat_tables);
 
         let packets = vec![build_test_ipv4_packet(u8::MAX).unwrap()].into_iter();
@@ -350,17 +351,13 @@ mod tests {
             .try_ipv4()
             .expect("Failed to get IPv4 header");
         println!("L3 header: {hdr0_out:?}");
-        assert_eq!(hdr0_out.destination(), addr_v4("99.99.3.4"));
+        assert_eq!(hdr0_out.destination(), addr_v4("10.2.4.4"));
     }
 
     #[test]
     fn test_src_nat_stateless_44() {
-        let (vpc1, vpc2, _) = build_context();
+        let nat_tables = build_context();
         let mut nat = Nat::new::<TestBuffer>(NatDirection::SrcNat, NatMode::Stateless);
-
-        let mut nat_tables = NatTables::new();
-        nat_tables.add_table(Vni::new_checked(100).expect("Failed to create VNI"), vpc1);
-        nat_tables.add_table(Vni::new_checked(200).expect("Failed to create VNI"), vpc2);
         nat.update_tables(nat_tables);
 
         let packets = vec![build_test_ipv4_packet(u8::MAX).unwrap()].into_iter();
@@ -372,6 +369,6 @@ mod tests {
             .try_ipv4()
             .expect("Failed to get IPv4 header");
         println!("L3 header: {hdr0_out:?}");
-        assert_eq!(hdr0_out.source().inner(), addr_v4("10.0.1.4"));
+        assert_eq!(hdr0_out.source().inner(), addr_v4("2.1.4.4"));
     }
 }
