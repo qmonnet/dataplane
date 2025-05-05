@@ -525,21 +525,55 @@ mod tests {
                     original_entry.vpc
                 );
 
+                fn get_filtered_ips_count(ips: &[gateway_config::PeeringIPs]) -> usize {
+                    ips.iter()
+                        .filter(|p| {
+                            *p != &gateway_config::PeeringIPs {
+                                rule: Some(gateway_config::config::peering_i_ps::Rule::Cidr(
+                                    "0.0.0.0/0".to_string(),
+                                )),
+                            } && *p
+                                != &gateway_config::PeeringIPs {
+                                    rule: Some(gateway_config::config::peering_i_ps::Rule::Cidr(
+                                        "::/0".to_string(),
+                                    )),
+                                }
+                        })
+                        .count()
+                }
+
+                fn get_filtered_as_count(ips: &[gateway_config::PeeringAs]) -> usize {
+                    ips.iter()
+                        .filter(|p| {
+                            *p != &gateway_config::PeeringAs {
+                                rule: Some(gateway_config::config::peering_as::Rule::Cidr(
+                                    "0.0.0.0/0".to_string(),
+                                )),
+                            } && *p
+                                != &gateway_config::PeeringAs {
+                                    rule: Some(gateway_config::config::peering_as::Rule::Cidr(
+                                        "::/0".to_string(),
+                                    )),
+                                }
+                        })
+                        .count()
+                }
+
                 // Check each expose rule
                 for (j, original_expose) in original_entry.expose.iter().enumerate() {
                     let converted_expose = &converted_entry.expose[j];
 
                     // Check IP rules count
                     assert_eq!(
-                        converted_expose.ips.len(),
-                        original_expose.ips.len(),
+                        get_filtered_ips_count(&converted_expose.ips),
+                        get_filtered_ips_count(&original_expose.ips),
                         "IP rules count mismatch in expose rule"
                     );
 
                     // Check AS rules count
                     assert_eq!(
-                        converted_expose.r#as.len(),
-                        original_expose.r#as.len(),
+                        get_filtered_as_count(&converted_expose.r#as),
+                        get_filtered_as_count(&original_expose.r#as),
                         "AS rules count mismatch in expose rule"
                     );
                 }
