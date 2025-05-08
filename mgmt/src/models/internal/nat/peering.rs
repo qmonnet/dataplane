@@ -18,17 +18,7 @@ fn get_public_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieValu
     let target = expose.as_range.clone();
     let target_excludes = expose.not_as.clone();
 
-    let mut excludes: PrefixTrie<()> = PrefixTrie::new();
-    expose.nots.iter().try_for_each(|exclude| {
-        // Only add excludes that are covered by the prefix
-        if prefix.covers(exclude) {
-            excludes.insert(exclude, ())?;
-        }
-        Ok(())
-    })?;
-
     Ok(TrieValue::new(
-        excludes,
         orig,
         orig_excludes,
         target,
@@ -44,17 +34,7 @@ fn get_private_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieVal
     let target = expose.as_range.clone();
     let target_excludes = expose.not_as.clone();
 
-    let mut excludes: PrefixTrie<()> = PrefixTrie::new();
-    expose.not_as.iter().try_for_each(|exclude| {
-        // Only add excludes that are covered by the prefix
-        if prefix.covers(exclude) {
-            excludes.insert(exclude, ())?;
-        }
-        Ok(())
-    })?;
-
     Ok(TrieValue::new(
-        excludes,
         orig,
         orig_excludes,
         target,
@@ -74,6 +54,10 @@ pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieEr
         expose.ips.iter().try_for_each(|prefix| {
             let pub_value = get_public_trie_value(expose, prefix)?;
             peering_table.insert(prefix, pub_value)
+        })?;
+        // Add "None" entries for excluded prefixes
+        expose.nots.iter().try_for_each(|prefix| {
+            peering_table.insert_none(prefix)
         })?;
 
         // Add peering table to VniTable
@@ -97,6 +81,10 @@ pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieEr
         expose.as_range.iter().try_for_each(|prefix| {
             let priv_value = get_private_trie_value(expose, prefix)?;
             table.table_dst_nat.insert(prefix, priv_value)
+        })?;
+        // Add "None" entries for excluded prefixes
+        expose.not_as.iter().try_for_each(|prefix| {
+            table.table_dst_nat.insert_none(prefix)
         })
     })?;
 

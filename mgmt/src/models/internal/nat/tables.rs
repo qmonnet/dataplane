@@ -54,7 +54,7 @@ impl VniTable {
     }
 
     #[tracing::instrument(level = "trace")]
-    pub fn lookup_src_prefix(&self, addr: &IpAddr) -> Option<(&TrieValue)> {
+    pub fn lookup_src_prefix(&self, addr: &IpAddr) -> Option<&TrieValue> {
         // Find relevant prefix table for involved peer
         let peer_index = self.table_src_nat_peers.lookup(addr)?;
 
@@ -62,32 +62,22 @@ impl VniTable {
         let prefix_table = self.table_src_nat_prefixes.get(peer_index)?;
         let (_, value) = prefix_table.lookup(addr)?;
 
-        // Ensure that the prefix is not in the list of excluded prefixes
-        if value.excludes_trie.lookup(addr).is_some() {
-            return None;
-        }
-
-        Some(value)
+        value.as_ref()
     }
 
     #[tracing::instrument(level = "trace")]
-    pub fn lookup_dst_prefix(&self, addr: &IpAddr) -> Option<(&TrieValue)> {
+    pub fn lookup_dst_prefix(&self, addr: &IpAddr) -> Option<&TrieValue> {
         // Look up for the NAT prefix in the table
         let (_, value) = self.table_dst_nat.lookup(addr)?;
 
-        // Ensure that the prefix is not in the list of excluded prefixes
-        if value.excludes_trie.lookup(addr).is_some() {
-            return None;
-        }
-
-        Some(value)
+        value.as_ref()
     }
 }
 
 /// From a current address prefix, find the target address prefix.
 #[derive(Debug, Clone)]
 pub struct NatPrefixRuleTable {
-    pub rules: PrefixTrie<TrieValue>,
+    pub rules: PrefixTrie<Option<TrieValue>>,
 }
 
 /// From a current address prefix, find the relevant [`NatPrefixRuleTable`] for the target prefix
@@ -107,11 +97,16 @@ impl NatPrefixRuleTable {
 
     #[tracing::instrument(level = "trace")]
     pub fn insert(&mut self, key: &Prefix, value: TrieValue) -> Result<(), TrieError> {
-        self.rules.insert(key, value)
+        self.rules.insert(key, Some(value))
     }
 
     #[tracing::instrument(level = "trace")]
-    pub fn lookup(&self, addr: &IpAddr) -> Option<(Prefix, &TrieValue)> {
+    pub fn insert_none(&mut self, key: &Prefix) -> Result<(), TrieError> {
+        self.rules.insert(key, None)
+    }
+
+    #[tracing::instrument(level = "trace")]
+    pub fn lookup(&self, addr: &IpAddr) -> Option<(Prefix, &Option<TrieValue>)> {
         self.rules.lookup(addr)
     }
 }
@@ -137,7 +132,6 @@ impl NatPeerRuleTable {
 
 #[derive(Debug, Clone, Default)]
 pub struct TrieValue {
-    excludes_trie: PrefixTrie<()>,
     orig: BTreeSet<Prefix>,
     orig_excludes: BTreeSet<Prefix>,
     target: BTreeSet<Prefix>,
@@ -147,14 +141,12 @@ pub struct TrieValue {
 impl TrieValue {
     #[tracing::instrument(level = "trace")]
     pub fn new(
-        excludes_trie: PrefixTrie<()>,
         orig: BTreeSet<Prefix>,
         orig_excludes: BTreeSet<Prefix>,
         target: BTreeSet<Prefix>,
         target_excludes: BTreeSet<Prefix>,
     ) -> Self {
         Self {
-            excludes_trie,
             orig,
             orig_excludes,
             target,
