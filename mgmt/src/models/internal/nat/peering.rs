@@ -9,6 +9,8 @@ use routing::prefix::Prefix;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 
+/// Create a TrieValue from the public side of a VpcExpose, for a given prefix in this VpcExpose
+#[tracing::instrument(level = "trace")]
 fn get_public_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieValue, TrieError> {
     let orig = expose.ips.clone();
     let orig_excludes = expose.nots.clone();
@@ -33,6 +35,8 @@ fn get_public_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieValu
     ))
 }
 
+/// Create a TrieValue from the private side of a VpcExpose, for a given prefix in this VpcExpose
+#[tracing::instrument(level = "trace")]
 fn get_private_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieValue, TrieError> {
     let orig = expose.ips.clone();
     let orig_excludes = expose.nots.clone();
@@ -57,6 +61,7 @@ fn get_private_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieVal
     ))
 }
 
+/// Add a [`Peering`] to a [`VniTable`]
 #[tracing::instrument(level = "trace")]
 pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieError> {
     peering.local.exposes.iter().try_for_each(|expose| {
