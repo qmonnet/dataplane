@@ -152,11 +152,16 @@ impl Nat {
     /// Applies network address translation to a packet, knowing the current and target ranges.
     #[tracing::instrument(level = "trace")]
     fn translate(&self, net: &mut Net, ranges: &TrieValue) -> Option<()> {
-        let current_ip = match self.direction {
-            NatDirection::SrcNat => get_src_addr(net),
-            NatDirection::DstNat => get_dst_addr(net),
+        let target_ip = match self.direction {
+            NatDirection::SrcNat => {
+                let current_ip = get_src_addr(net);
+                iplist::map_ip_src_nat(ranges, &current_ip)
+            }
+            NatDirection::DstNat => {
+                let current_ip = get_dst_addr(net);
+                iplist::map_ip_dst_nat(ranges, &current_ip)
+            }
         };
-        let target_ip = iplist::map_ip(ranges, &current_ip);
 
         match self.direction {
             NatDirection::SrcNat => match (net, target_ip) {
@@ -246,17 +251,21 @@ mod tests {
         //       - ips:
         //         - cidr: 1.1.0.0/16
         //         - cidr: 1.2.0.0/16 # <- 1.2.3.4 will match here
-        //         - not: 1.1.5.0/24
-        //         - not: 1.1.3.0/24
-        //         - not: 1.1.1.0/24
-        //         - not: 1.2.2.0/24 # to account for when computing the offset
+        //         - not: 1.1.5.0/24  # to account for when computing the offset
+        //         - not: 1.1.3.0/24  # to account for when computing the offset
+        //         - not: 1.1.1.0/24  # to account for when computing the offset
+        //         - not: 1.2.2.0/24  # to account for when computing the offset
         //         as:
         //         - cidr: 2.2.0.0/16
-        //         - cidr: 2.1.0.0/16 # <- corresponding target range
-        //         - not: 2.1.10.0/24
-        //         - not: 2.1.1.0/24 # to account for when fetching the address in range
-        //         - not: 2.1.8.0/24
-        //         - not: 2.1.2.0/24 # to account for when fetching the address in range
+        //         - cidr: 2.1.0.0/16 # <- corresp. target range, initially
+        //                            # (prefixes in BTreeSet are sorted)
+        //                            # offset for 2.1.255.4, before applying exlusions
+        //                            # final offset is for 2.2.0.4 after accounting for the one
+        //                            # relevant exclusion prefix
+        //         - not: 2.1.8.0/24  # to account for when fetching the address in range
+        //         - not: 2.2.10.0/24
+        //         - not: 2.2.1.0/24  # ignored, offset too low
+        //         - not: 2.2.2.0/24  # ignored, offset too low
         //       - ips:
         //         - cidr: 3.0.0.0/16
         //         as:
@@ -269,10 +278,10 @@ mod tests {
             .ip(prefix_v4("1.2.0.0/16"))
             .not(prefix_v4("1.2.2.0/24"))
             .as_range(prefix_v4("2.2.0.0/16"))
-            .not_as(prefix_v4("2.1.10.0/24"))
-            .not_as(prefix_v4("2.1.1.0/24"))
             .not_as(prefix_v4("2.1.8.0/24"))
-            .not_as(prefix_v4("2.1.2.0/24"))
+            .not_as(prefix_v4("2.2.10.0/24"))
+            .not_as(prefix_v4("2.2.1.0/24"))
+            .not_as(prefix_v4("2.2.2.0/24"))
             .as_range(prefix_v4("2.1.0.0/16"));
         let expose2 = VpcExpose::empty()
             .ip(prefix_v4("3.0.0.0/16"))
@@ -293,12 +302,12 @@ mod tests {
         //         - not: 3.0.1.0/24
         //       - ips:
         //         - cidr: 10.0.0.0/16 # <- corresponding target range
-        //         - not: 10.0.1.0/24 # to account for when fetching the address in range
-        //         - not: 10.0.2.0/24 # to account for when fetching the address in range
+        //         - not: 10.0.1.0/24  # to account for when fetching the address in range
+        //         - not: 10.0.2.0/24  # to account for when fetching the address in range
         //         as:
         //         - cidr: 1.1.0.0/17
-        //         - cidr: 1.2.0.0/17 # <- 1.2.3.4 will match here
-        //         - not: 1.2.0.0/24 # to account for when computing the offset
+        //         - cidr: 1.2.0.0/17  # <- 1.2.3.4 will match here
+        //         - not: 1.2.0.0/24   # to account for when computing the offset
         //         - not: 1.2.8.0/24
         let expose3 = VpcExpose::empty()
             .ip(prefix_v4("8.0.0.0/17"))
@@ -351,7 +360,7 @@ mod tests {
             .try_ipv4()
             .expect("Failed to get IPv4 header");
         println!("L3 header: {hdr0_out:?}");
-        assert_eq!(hdr0_out.destination(), addr_v4("10.2.4.4"));
+        assert_eq!(hdr0_out.destination(), addr_v4("10.0.132.4"));
     }
 
     #[test]
@@ -369,6 +378,6 @@ mod tests {
             .try_ipv4()
             .expect("Failed to get IPv4 header");
         println!("L3 header: {hdr0_out:?}");
-        assert_eq!(hdr0_out.source().inner(), addr_v4("2.1.4.4"));
+        assert_eq!(hdr0_out.source().inner(), addr_v4("2.2.0.4"));
     }
 }

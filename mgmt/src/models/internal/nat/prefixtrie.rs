@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Open Network Fabric Authors
 
-//! This submodule provides an IP version-independent trie data structure, to
-//! associate values to IP prefixes.
+//! This submodule provides an IP version-independent trie data structure, to associate values to IP
+//! prefixes.
 
 use iptrie::map::RTrieMap;
 use iptrie::{Ipv4Prefix, Ipv6Prefix};
@@ -17,11 +17,10 @@ pub enum TrieError {
     EntryExists,
 }
 
-/// A [`PrefixTrie`] is a data structure that stores a set of IP prefixes and
-/// their associated [`String`] values, independent of the IP address family.
+/// A [`PrefixTrie`] is a data structure that stores a set of IP prefixes and their associated
+/// [`String`] values, independent of the IP address family.
 ///
-/// It is used to efficiently look up the value associated with a given IP
-/// address.
+/// It is used to efficiently look up the value associated with a given IP address.
 ///
 /// Internally, it relies on two different tries, one for IPv4 and one for IPv6.
 #[derive(Default, Clone)]
@@ -97,18 +96,16 @@ where
 
     /// Looks up for the value associated with the given address.
     ///
-    /// This function returns the value associated with the given address if it
-    /// is present in the trie. If the address is not present, it will return
-    /// `None`.
+    /// This function returns the value associated with the given address if it is present in the
+    /// trie. If the address is not present, it will return `None`.
     #[tracing::instrument(level = "trace")]
     pub fn lookup(&self, addr: &IpAddr) -> Option<(Prefix, &T)> {
         match addr {
             IpAddr::V4(ip) => {
                 let (&k, v) = self.trie_ipv4.lookup(&Ipv4Prefix::from(*ip));
-                // The RTrieMap lookup always return an entry; if no better
-                // match, it returns the root of the map, which always exists.
-                // This means that to check if the result is "empty", we need to
-                // check whether the returned entry is the root for the map.
+                // The RTrieMap lookup always return an entry; if no better match, it returns the
+                // root of the map, which always exists.  This means that to check if the result is
+                // "empty", we need to check whether the returned entry is the root for the map.
                 if Prefix::IPV4(k).is_root() {
                     None
                 } else {
@@ -117,10 +114,9 @@ where
             }
             IpAddr::V6(ip) => {
                 let (&k, v) = self.trie_ipv6.lookup(&Ipv6Prefix::from(*ip));
-                // The RTrieMap lookup always return an entry; if no better
-                // match, it returns the root of the map, which always exists.
-                // This means that to check if the result is "empty", we need to
-                // check whether the returned entry is the root for the map.
+                // The RTrieMap lookup always return an entry; if no better match, it returns the
+                // root of the map, which always exists.  This means that to check if the result is
+                // "empty", we need to check whether the returned entry is the root for the map.
                 if Prefix::IPV6(k).is_root() {
                     None
                 } else {

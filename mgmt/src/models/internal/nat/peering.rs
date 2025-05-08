@@ -2,12 +2,13 @@
 // Copyright Open Network Fabric Authors
 
 use crate::models::external::overlay::vpc::Peering;
-use crate::models::external::overlay::vpcpeering::VpcExpose;
+use crate::models::external::overlay::vpcpeering::{VpcExpose, VpcManifest};
 use crate::models::internal::nat::prefixtrie::{PrefixTrie, TrieError};
 use crate::models::internal::nat::tables::{NatPrefixRuleTable, TrieValue, VniTable};
 use routing::prefix::Prefix;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// Create a TrieValue from the public side of a VpcExpose, for a given prefix in this VpcExpose
 #[tracing::instrument(level = "trace")]
@@ -110,12 +111,12 @@ pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieEr
 fn optimize_expose(
     prefixes: &BTreeSet<Prefix>,
     excludes: &BTreeSet<Prefix>,
-) -> Result<(BTreeSet<Prefix>, BTreeSet<Prefix>), PeeringError> {
+) -> (BTreeSet<Prefix>, BTreeSet<Prefix>) {
     let mut clone = prefixes.clone();
     let mut clone_not = excludes.clone();
     // Sort excludes by mask length, descending.
     let mut excludes_sorted = excludes.iter().collect::<Vec<_>>();
-    excludes_sorted.sort_by(|a, b| b.length().cmp(&a.length()));
+    excludes_sorted.sort_by_key(|p| std::cmp::Reverse(p.length()));
 
     for prefix in prefixes.iter() {
         for exclude in excludes_sorted.iter() {
@@ -170,27 +171,27 @@ fn optimize_expose(
             }
         }
     }
-    Ok((clone, clone_not))
+    (clone, clone_not)
 }
 
 /// Optimize a [`Peering`] object:
 ///
 /// - Optimize both [`VpcManifest`] objects (see [`optimize_expose()`])
 #[tracing::instrument(level = "trace")]
-pub fn optimize_peering(peering: &Peering) -> Result<Peering, PeeringError> {
+pub fn optimize_peering(peering: &Peering) -> Peering {
     // Collapse prefixes and exclusion prefixes
     let mut clone = peering.clone();
     for expose in clone.local.exposes.iter_mut() {
-        let (ips, nots) = optimize_expose(&expose.ips, &expose.nots)?;
+        let (ips, nots) = optimize_expose(&expose.ips, &expose.nots);
         expose.ips = ips;
         expose.nots = nots;
     }
     for expose in clone.remote.exposes.iter_mut() {
-        let (as_range, not_as) = optimize_expose(&expose.as_range, &expose.not_as)?;
+        let (as_range, not_as) = optimize_expose(&expose.as_range, &expose.not_as);
         expose.as_range = as_range;
         expose.not_as = not_as;
     }
-    Ok(clone)
+    clone
 }
 
 #[cfg(test)]

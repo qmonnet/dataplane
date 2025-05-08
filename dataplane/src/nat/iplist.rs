@@ -336,9 +336,17 @@ impl IpList {
 }
 
 #[tracing::instrument(level = "trace")]
-pub fn map_ip(ranges: &TrieValue, current_ip: &IpAddr) -> IpAddr {
+pub fn map_ip_src_nat(ranges: &TrieValue, current_ip: &IpAddr) -> IpAddr {
     let current_range = IpList::new(ranges.orig_prefixes(), ranges.orig_excludes());
     let target_range = IpList::new(ranges.target_prefixes(), ranges.target_excludes());
+    let offset = current_range.addr_offset_in_prefix(current_ip);
+    target_range.addr_from_prefix_offset(&offset)
+}
+
+#[tracing::instrument(level = "trace")]
+pub fn map_ip_dst_nat(ranges: &TrieValue, current_ip: &IpAddr) -> IpAddr {
+    let current_range = IpList::new(ranges.target_prefixes(), ranges.target_excludes());
+    let target_range = IpList::new(ranges.orig_prefixes(), ranges.orig_excludes());
     let offset = current_range.addr_offset_in_prefix(current_ip);
     target_range.addr_from_prefix_offset(&offset)
 }
