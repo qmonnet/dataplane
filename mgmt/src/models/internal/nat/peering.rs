@@ -97,6 +97,97 @@ pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieEr
     Ok(())
 }
 
+/// Optimize a list of prefixes and their exclusions:
+///
+/// - Remove mutually-excluding prefixes/exclusion prefixes pairs
+/// - Collapse prefixes and exclusion prefixes when possible
+#[tracing::instrument(level = "trace")]
+fn optimize_expose(
+    prefixes: &BTreeSet<Prefix>,
+    excludes: &BTreeSet<Prefix>,
+) -> Result<(BTreeSet<Prefix>, BTreeSet<Prefix>), PeeringError> {
+    let mut clone = prefixes.clone();
+    let mut clone_not = excludes.clone();
+    // Sort excludes by mask length, descending.
+    let mut excludes_sorted = excludes.iter().collect::<Vec<_>>();
+    excludes_sorted.sort_by(|a, b| b.length().cmp(&a.length()));
+
+    for prefix in prefixes.iter() {
+        for exclude in excludes_sorted.iter() {
+            if !prefix.covers(exclude) {
+                continue;
+            }
+            if prefix.length() == exclude.length() {
+                // Prefix and exclusion prefix are the same. We can remove both.
+                clone.remove(prefix);
+                clone_not.remove(exclude);
+            } else if prefix.length() == 2 * exclude.length() {
+                // Exclusion prefixes is half of the prefix. We can transform the prefix by
+                // extending its mask and keeping only the relevant portion, and discard the
+                // exclusion prefix entirely.
+                //
+                // We want to try biggest exclusion prefixes first, to avoid "missing" optimization
+                // for smaller exclusion prefixes before the one for bigger exclusion prefixes has
+                // been applied. This is why we sorted the exclusion prefixes by mask length,
+                // descending, at the beginning of the function.
+                let new_length = prefix.length() + 1;
+                let mut new_address;
+                if prefix.as_address() != exclude.as_address() {
+                    // Exclusion prefix is the second half of the prefix; keep the first half.
+                    new_address = prefix.as_address();
+                } else {
+                    // Exclusion prefix covers the first half of the prefix.
+                    // Here we need to update the address to keep the second half of the prefix.
+                    new_address = match prefix.as_address() {
+                        IpAddr::V4(addr) => {
+                            let Ok(exclude_size) = u32::try_from(exclude.size()) else {
+                                unreachable!(
+                                    "Exclude size too big ({}), bug in IpList",
+                                    exclude.size()
+                                )
+                            };
+                            IpAddr::V4(Ipv4Addr::from(addr.to_bits() + exclude_size))
+                        }
+                        IpAddr::V6(addr) => {
+                            IpAddr::V6(Ipv6Addr::from(addr.to_bits() + exclude.size()))
+                        }
+                        // Prefix cannot cover exclusion prefix of a different IP version
+                        _ => unreachable!(
+                            "Prefix and exclusion prefix are not of the same IP version"
+                        ),
+                    }
+                };
+                let new_prefix = Prefix::from((new_address, new_length));
+
+                clone.remove(prefix);
+                clone_not.remove(exclude);
+                clone.insert(new_prefix);
+            }
+        }
+    }
+    Ok((clone, clone_not))
+}
+
+/// Optimize a [`Peering`] object:
+///
+/// - Optimize both [`VpcManifest`] objects (see [`optimize_expose()`])
+#[tracing::instrument(level = "trace")]
+pub fn optimize_peering(peering: &Peering) -> Result<Peering, PeeringError> {
+    // Collapse prefixes and exclusion prefixes
+    let mut clone = peering.clone();
+    for expose in clone.local.exposes.iter_mut() {
+        let (ips, nots) = optimize_expose(&expose.ips, &expose.nots)?;
+        expose.ips = ips;
+        expose.nots = nots;
+    }
+    for expose in clone.remote.exposes.iter_mut() {
+        let (as_range, not_as) = optimize_expose(&expose.as_range, &expose.not_as)?;
+        expose.as_range = as_range;
+        expose.not_as = not_as;
+    }
+    Ok(clone)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
