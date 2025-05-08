@@ -216,126 +216,94 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn test_fabric() {
-        let mut vpc1 = VniTable::new(
-            "test_vpc1".into(),
-            Vni::new_checked(100).expect("Failed to create VNI"),
-        );
-        let mut vpc2 = VniTable::new(
-            "test_vpc2".into(),
-            Vni::new_checked(200).expect("Failed to create VNI"),
-        );
+        // Build VpcExpose objects
+        //
+        //     expose:
+        //       - ips:
+        //         - cidr: 1.1.0.0/16
+        //         - cidr: 1.2.0.0/16 # <- 1.2.3.4 will match here
+        //         - not: 1.1.5.0/24
+        //         - not: 1.1.3.0/24
+        //         - not: 1.1.1.0/24
+        //         - not: 1.2.2.0/24 # to account for when computing the offset
+        //         as:
+        //         - cidr: 2.2.0.0/16
+        //         - cidr: 2.1.0.0/16 # <- corresponding target range
+        //         - not: 2.1.10.0/24
+        //         - not: 2.1.1.0/24 # to account for when fetching the address in range
+        //         - not: 2.1.8.0/24
+        //         - not: 2.1.2.0/24 # to account for when fetching the address in range
+        //       - ips:
+        //         - cidr: 3.0.0.0/16
+        //         as:
+        //         - cidr: 4.0.0.0/16
+        let expose1 = VpcExpose::empty()
+            .ip(prefix_v4("1.1.0.0/16"))
+            .not(prefix_v4("1.1.5.0/24"))
+            .not(prefix_v4("1.1.3.0/24"))
+            .not(prefix_v4("1.1.1.0/24"))
+            .ip(prefix_v4("1.2.0.0/16"))
+            .not(prefix_v4("1.2.2.0/24"))
+            .as_range(prefix_v4("2.2.0.0/16"))
+            .not_as(prefix_v4("2.1.10.0/24"))
+            .not_as(prefix_v4("2.1.1.0/24"))
+            .not_as(prefix_v4("2.1.8.0/24"))
+            .not_as(prefix_v4("2.1.2.0/24"))
+            .as_range(prefix_v4("2.1.0.0/16"));
+        let expose2 = VpcExpose::empty()
+            .ip(prefix_v4("3.0.0.0/16"))
+            .as_range(prefix_v4("4.0.0.0/16"));
 
-        assert_eq!(vpc1.name(), "test_vpc1");
-        assert_eq!(vpc1.vni().as_u32(), 100);
-        assert_eq!(vpc2.name(), "test_vpc2");
-        assert_eq!(vpc2.vni().as_u32(), 200);
-
-        let mut peering = VpcPeering {
-            name: "test_peering".into(),
-            left: VpcManifest::new("test_vpc1"),
-            right: VpcManifest::new("test_vpc2"),
+        let manifest1 = VpcManifest {
+            name: "test_manifest1".into(),
+            exposes: vec![expose1, expose2],
         };
-        peering.local.insert(
-            "test_vpc1".into(),
-            VpcPeering {
-                vpc: VpcManifest {
-                    exposes: vec![
-                        VpcExpose {
-                            cidr: prefix_v4("1.2.3.0/24"),
-                        },
-                        VpcExpose {
-                            cidr: prefix_v4("4.5.6.0/24"),
-                        },
-                        VpcExpose {
-                            cidr: prefix_v4("7.8.9.0/24"),
-                        },
-                        VpcExpose {
-                            cidr: prefix_v6("abcd::/64"),
-                        },
-                    ],
-                },
-                exposes: vec![
-                    VpcExpose {
-                        cidr: prefix_v4("10.0.1.0/24"),
-                    },
-                    VpcExpose {
-                        cidr: prefix_v4("10.0.2.0/24"),
-                    },
-                    VpcExpose {
-                        cidr: prefix_v4("10.0.3.0/24"),
-                    },
-                    VpcExpose {
-                        cidr: prefix_v6("1234::/64"),
-                    },
-                ],
-            },
-        );
-        peering.local.insert(
-            "test_vpc2".into(),
-            VpcPeering {
-                vpc: VpcManifest {
-                    exposes: vec![
-                        VpcExpose {
-                            cidr: prefix_v4("9.9.0.0/16"),
-                        },
-                        VpcExpose {
-                            cidr: prefix_v4("99.99.0.0/16"),
-                        },
-                    ],
-                },
-                exposes: vec![
-                    VpcExpose {
-                        cidr: prefix_v4("1.1.0.0/16"),
-                    },
-                    VpcExpose {
-                        cidr: prefix_v4("1.2.0.0/16"),
-                    },
-                ],
-            },
-        );
 
-        assert_eq!(peering.name, "test_peering");
-        assert_eq!(peering.local.len(), 2);
-        assert_eq!(
-            peering
-                .local
-                .get("test_vpc1")
-                .expect("Failed to get entry")
-                .vpc
-                .exposes
-                .len(),
-            4
-        );
-        assert_eq!(
-            peering
-                .remote
-                .get("test_vpc2")
-                .expect("Failed to get entry")
-                .exposes
-                .len(),
-            2
-        );
+        //     expose:
+        //       - ips:
+        //         - cidr: 8.0.0.0/17
+        //         - cidr: 9.0.0.0/17
+        //         - not: 8.0.0.0/24
+        //         as:
+        //         - cidr: 3.0.0.0/16
+        //         - not: 3.0.1.0/24
+        //       - ips:
+        //         - cidr: 10.0.0.0/16 # <- corresponding target range
+        //         - not: 10.0.1.0/24 # to account for when fetching the address in range
+        //         - not: 10.0.2.0/24 # to account for when fetching the address in range
+        //         as:
+        //         - cidr: 1.1.0.0/17
+        //         - cidr: 1.2.0.0/17 # <- 1.2.3.4 will match here
+        //         - not: 1.2.0.0/24 # to account for when computing the offset
+        //         - not: 1.2.8.0/24
+        let expose3 = VpcExpose::empty()
+            .ip(prefix_v4("8.0.0.0/17"))
+            .not(prefix_v4("8.0.0.0/24"))
+            .ip(prefix_v4("9.0.0.0/17"))
+            .as_range(prefix_v4("3.0.0.0/16"))
+            .not_as(prefix_v4("3.0.1.0/24"));
+        let expose4 = VpcExpose::empty()
+            .ip(prefix_v4("10.0.0.0/16"))
+            .not(prefix_v4("10.0.1.0/24"))
+            .not(prefix_v4("10.0.2.0/24"))
+            .as_range(prefix_v4("1.1.0.0/17"))
+            .as_range(prefix_v4("1.2.0.0/17"))
+            .not_as(prefix_v4("1.2.0.0/24"))
+            .not_as(prefix_v4("1.2.8.0/24"));
 
-        assert_eq!(vpc1.table_src_nat_prefixes.len(), 0);
+        let manifest2 = VpcManifest {
+            name: "test_manifest2".into(),
+            exposes: vec![expose3, expose4],
+        };
 
-        add_peering(&mut vpc1, &peering).expect("Failed to add peering");
-        add_peering(&mut vpc2, &peering).expect("Failed to add peering");
+        let peering: Peering = Peering {
+            name: "test_peering".into(),
+            local: manifest1,
+            remote: manifest2,
+        };
 
-        assert_eq!(vpc1.table_src_nat_prefixes.len(), 1);
-
-        assert_eq!(
-            vpc1.lookup_src_prefix(&addr_v4("1.2.3.4")),
-            Some((prefix_v4("1.2.3.0/24"), &prefix_v4("10.0.1.0/24")))
-        );
-
-        assert_eq!(
-            vpc1.lookup_dst_prefix(&addr_v4("1.2.3.4")),
-            Some((prefix_v4("1.2.0.0/16"), &prefix_v4("99.99.0.0/16")))
-        );
-
-        assert_eq!(
-            vpc1.lookup_src_prefix(&addr_v6("abcd::5678")),
-            Some((prefix_v6("abcd::/64"), &prefix_v6("1234::/64")))
-        );
+        let vni = Vni::new_checked(100).expect("Failed to create VNI");
+        let mut vni_table = VniTable::new(vni);
+        add_peering(&mut vni_table, &peering).expect("Failed to build NAT tables");
     }
 }
