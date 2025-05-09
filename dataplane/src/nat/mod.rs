@@ -38,6 +38,7 @@
 
 mod iplist;
 
+use crate::nat::iplist::IpList;
 use mgmt::models::internal::nat::tables::{NatTables, TrieValue};
 use net::buffer::PacketBufferMut;
 use net::headers::Net;
@@ -149,17 +150,33 @@ impl Nat {
         }
     }
 
+    #[tracing::instrument(level = "trace")]
+    fn map_ip_src_nat(&self, ranges: &TrieValue, current_ip: &IpAddr) -> IpAddr {
+        let current_range = IpList::new(ranges.orig_prefixes(), ranges.orig_excludes());
+        let target_range = IpList::new(ranges.target_prefixes(), ranges.target_excludes());
+        let offset = current_range.addr_offset_in_prefix(current_ip);
+        target_range.addr_from_prefix_offset(&offset)
+    }
+
+    #[tracing::instrument(level = "trace")]
+    fn map_ip_dst_nat(&self, ranges: &TrieValue, current_ip: &IpAddr) -> IpAddr {
+        let current_range = IpList::new(ranges.target_prefixes(), ranges.target_excludes());
+        let target_range = IpList::new(ranges.orig_prefixes(), ranges.orig_excludes());
+        let offset = current_range.addr_offset_in_prefix(current_ip);
+        target_range.addr_from_prefix_offset(&offset)
+    }
+
     /// Applies network address translation to a packet, knowing the current and target ranges.
     #[tracing::instrument(level = "trace")]
     fn translate(&self, net: &mut Net, ranges: &TrieValue) -> Option<()> {
         let target_ip = match self.direction {
             NatDirection::SrcNat => {
                 let current_ip = get_src_addr(net);
-                iplist::map_ip_src_nat(ranges, &current_ip)
+                self.map_ip_src_nat(ranges, &current_ip)
             }
             NatDirection::DstNat => {
                 let current_ip = get_dst_addr(net);
-                iplist::map_ip_dst_nat(ranges, &current_ip)
+                self.map_ip_dst_nat(ranges, &current_ip)
             }
         };
 
