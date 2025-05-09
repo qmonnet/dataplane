@@ -18,12 +18,7 @@ fn get_public_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieValu
     let target = expose.as_range.clone();
     let target_excludes = expose.not_as.clone();
 
-    Ok(TrieValue::new(
-        orig,
-        orig_excludes,
-        target,
-        target_excludes,
-    ))
+    Ok(TrieValue::new(orig, orig_excludes, target, target_excludes))
 }
 
 /// Create a TrieValue from the private side of a VpcExpose, for a given prefix in this VpcExpose
@@ -34,12 +29,7 @@ fn get_private_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieVal
     let target = expose.as_range.clone();
     let target_excludes = expose.not_as.clone();
 
-    Ok(TrieValue::new(
-        orig,
-        orig_excludes,
-        target,
-        target_excludes,
-    ))
+    Ok(TrieValue::new(orig, orig_excludes, target, target_excludes))
 }
 
 /// Add a [`Peering`] to a [`VniTable`]
@@ -56,9 +46,10 @@ pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieEr
             peering_table.insert(prefix, pub_value)
         })?;
         // Add "None" entries for excluded prefixes
-        expose.nots.iter().try_for_each(|prefix| {
-            peering_table.insert_none(prefix)
-        })?;
+        expose
+            .nots
+            .iter()
+            .try_for_each(|prefix| peering_table.insert_none(prefix))?;
 
         // Add peering table to VniTable
         table.table_src_nat_prefixes.push(peering_table);
@@ -83,9 +74,10 @@ pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieEr
             table.table_dst_nat.insert(prefix, priv_value)
         })?;
         // Add "None" entries for excluded prefixes
-        expose.not_as.iter().try_for_each(|prefix| {
-            table.table_dst_nat.insert_none(prefix)
-        })
+        expose
+            .not_as
+            .iter()
+            .try_for_each(|prefix| table.table_dst_nat.insert_none(prefix))
     })?;
 
     Ok(())
@@ -106,8 +98,8 @@ fn optimize_expose(
     let mut excludes_sorted = excludes.iter().collect::<Vec<_>>();
     excludes_sorted.sort_by_key(|p| std::cmp::Reverse(p.length()));
 
-    for prefix in prefixes.iter() {
-        for exclude in excludes_sorted.iter() {
+    for prefix in prefixes {
+        for exclude in &excludes_sorted {
             if !prefix.covers(exclude) {
                 continue;
             }
@@ -126,10 +118,7 @@ fn optimize_expose(
                 // descending, at the beginning of the function.
                 let new_length = prefix.length() + 1;
                 let mut new_address;
-                if prefix.as_address() != exclude.as_address() {
-                    // Exclusion prefix is the second half of the prefix; keep the first half.
-                    new_address = prefix.as_address();
-                } else {
+                if prefix.as_address() == exclude.as_address() {
                     // Exclusion prefix covers the first half of the prefix.
                     // Here we need to update the address to keep the second half of the prefix.
                     new_address = match prefix.as_address() {
@@ -150,7 +139,10 @@ fn optimize_expose(
                             "Prefix and exclusion prefix are not of the same IP version"
                         ),
                     }
-                };
+                } else {
+                    // Exclusion prefix is the second half of the prefix; keep the first half.
+                    new_address = prefix.as_address();
+                }
                 let new_prefix = Prefix::from((new_address, new_length));
 
                 clone.remove(prefix);
@@ -169,12 +161,12 @@ fn optimize_expose(
 pub fn optimize_peering(peering: &Peering) -> Peering {
     // Collapse prefixes and exclusion prefixes
     let mut clone = peering.clone();
-    for expose in clone.local.exposes.iter_mut() {
+    for expose in &mut clone.local.exposes {
         let (ips, nots) = optimize_expose(&expose.ips, &expose.nots);
         expose.ips = ips;
         expose.nots = nots;
     }
-    for expose in clone.remote.exposes.iter_mut() {
+    for expose in &mut clone.remote.exposes {
         let (as_range, not_as) = optimize_expose(&expose.as_range, &expose.not_as);
         expose.as_range = as_range;
         expose.not_as = not_as;
