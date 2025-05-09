@@ -191,38 +191,8 @@ mod tests {
         Ipv6Prefix::from_str(s).expect("Invalid IPv6 prefix").into()
     }
 
-    fn addr_v4(s: &str) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::from_str(s).expect("Invalid IPv4 address"))
-    }
-
-    fn addr_v6(s: &str) -> IpAddr {
-        IpAddr::V6(Ipv6Addr::from_str(s).expect("Invalid IPv6 address"))
-    }
-
     #[test]
-    #[allow(clippy::too_many_lines)]
     fn test_fabric() {
-        // Build VpcExpose objects
-        //
-        //     expose:
-        //       - ips:
-        //         - cidr: 1.1.0.0/16
-        //         - cidr: 1.2.0.0/16 # <- 1.2.3.4 will match here
-        //         - not: 1.1.5.0/24
-        //         - not: 1.1.3.0/24
-        //         - not: 1.1.1.0/24
-        //         - not: 1.2.2.0/24 # to account for when computing the offset
-        //         as:
-        //         - cidr: 2.2.0.0/16
-        //         - cidr: 2.1.0.0/16 # <- corresponding target range
-        //         - not: 2.1.10.0/24
-        //         - not: 2.1.1.0/24 # to account for when fetching the address in range
-        //         - not: 2.1.8.0/24
-        //         - not: 2.1.2.0/24 # to account for when fetching the address in range
-        //       - ips:
-        //         - cidr: 3.0.0.0/16
-        //         as:
-        //         - cidr: 4.0.0.0/16
         let expose1 = VpcExpose::empty()
             .ip(prefix_v4("1.1.0.0/16"))
             .not(prefix_v4("1.1.5.0/24"))
@@ -240,47 +210,24 @@ mod tests {
             .ip(prefix_v4("3.0.0.0/16"))
             .as_range(prefix_v4("4.0.0.0/16"));
 
-        let manifest1 = VpcManifest {
-            name: "test_manifest1".into(),
-            exposes: vec![expose1, expose2],
-        };
+        let mut manifest1 = VpcManifest::new("test_manifest1");
+        manifest1.add_expose(expose1).expect("Failed to add expose");
+        manifest1.add_expose(expose2).expect("Failed to add expose");
 
-        //     expose:
-        //       - ips:
-        //         - cidr: 8.0.0.0/17
-        //         - cidr: 9.0.0.0/17
-        //         - not: 8.0.0.0/24
-        //         as:
-        //         - cidr: 3.0.0.0/16
-        //         - not: 3.0.1.0/24
-        //       - ips:
-        //         - cidr: 10.0.0.0/16 # <- corresponding target range
-        //         - not: 10.0.1.0/24 # to account for when fetching the address in range
-        //         - not: 10.0.2.0/24 # to account for when fetching the address in range
-        //         as:
-        //         - cidr: 1.1.0.0/17
-        //         - cidr: 1.2.0.0/17 # <- 1.2.3.4 will match here
-        //         - not: 1.2.0.0/24 # to account for when computing the offset
-        //         - not: 1.2.8.0/24
         let expose3 = VpcExpose::empty()
-            .ip(prefix_v4("8.0.0.0/17"))
-            .not(prefix_v4("8.0.0.0/24"))
-            .ip(prefix_v4("9.0.0.0/17"))
-            .as_range(prefix_v4("3.0.0.0/16"))
-            .not_as(prefix_v4("3.0.1.0/24"));
+            .ip(prefix_v6("1::/64"))
+            .not(prefix_v6("1::/128"))
+            .as_range(prefix_v6("1:1::/64"))
+            .not_as(prefix_v6("1:2::/128"));
         let expose4 = VpcExpose::empty()
-            .ip(prefix_v4("10.0.0.0/16"))
-            .not(prefix_v4("10.0.1.0/24"))
-            .not(prefix_v4("10.0.2.0/24"))
-            .as_range(prefix_v4("1.1.0.0/17"))
-            .as_range(prefix_v4("1.2.0.0/17"))
-            .not_as(prefix_v4("1.2.0.0/24"))
-            .not_as(prefix_v4("1.2.8.0/24"));
+            .ip(prefix_v6("2::/64"))
+            .not(prefix_v6("2::/128"))
+            .as_range(prefix_v6("2:4::/64"))
+            .not_as(prefix_v6("2:9::/128"));
 
-        let manifest2 = VpcManifest {
-            name: "test_manifest2".into(),
-            exposes: vec![expose3, expose4],
-        };
+        let mut manifest2 = VpcManifest::new("test_manifest2");
+        manifest2.add_expose(expose3).expect("Failed to add expose");
+        manifest2.add_expose(expose4).expect("Failed to add expose");
 
         let peering: Peering = Peering {
             name: "test_peering".into(),
@@ -290,6 +237,7 @@ mod tests {
 
         let vni = Vni::new_checked(100).expect("Failed to create VNI");
         let mut vni_table = VniTable::new(vni);
+
         add_peering(&mut vni_table, &peering).expect("Failed to build NAT tables");
     }
 }
