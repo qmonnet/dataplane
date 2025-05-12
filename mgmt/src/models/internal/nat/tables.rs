@@ -16,14 +16,12 @@ pub struct NatTables {
 /// different connections established, but instead holding the base rules for stateful or static
 /// NAT.
 impl NatTables {
-    #[tracing::instrument(level = "trace")]
     pub fn new() -> Self {
         Self {
             tables: HashMap::new(),
         }
     }
 
-    #[tracing::instrument(level = "trace")]
     pub fn add_table(&mut self, vni: Vni, table: VniTable) {
         self.tables.insert(vni.as_u32(), table);
     }
@@ -37,7 +35,6 @@ pub struct VniTable {
 }
 
 impl VniTable {
-    #[tracing::instrument(level = "trace")]
     pub fn new() -> Self {
         Self {
             table_dst_nat: NatPrefixRuleTable::new(),
@@ -46,7 +43,6 @@ impl VniTable {
         }
     }
 
-    #[tracing::instrument(level = "trace")]
     pub fn lookup_src_prefix(&self, addr: &IpAddr) -> Option<&TrieValue> {
         // Find relevant prefix table for involved peer
         let peer_index = self.table_src_nat_peers.lookup(addr)?;
@@ -58,7 +54,6 @@ impl VniTable {
         value.as_ref()
     }
 
-    #[tracing::instrument(level = "trace")]
     pub fn lookup_dst_prefix(&self, addr: &IpAddr) -> Option<&TrieValue> {
         // Look up for the NAT prefix in the table
         let (_, value) = self.table_dst_nat.lookup(addr)?;
@@ -81,43 +76,36 @@ pub struct NatPeerRuleTable {
 }
 
 impl NatPrefixRuleTable {
-    #[tracing::instrument(level = "trace")]
     pub fn new() -> Self {
         Self {
             rules: PrefixTrie::new(),
         }
     }
 
-    #[tracing::instrument(level = "trace")]
     pub fn insert(&mut self, key: &Prefix, value: TrieValue) -> Result<(), TrieError> {
         self.rules.insert(key, Some(value))
     }
 
-    #[tracing::instrument(level = "trace")]
     pub fn insert_none(&mut self, key: &Prefix) -> Result<(), TrieError> {
         self.rules.insert(key, None)
     }
 
-    #[tracing::instrument(level = "trace")]
     pub fn lookup(&self, addr: &IpAddr) -> Option<(Prefix, &Option<TrieValue>)> {
         self.rules.lookup(addr)
     }
 }
 
 impl NatPeerRuleTable {
-    #[tracing::instrument(level = "trace")]
     pub fn new() -> Self {
         Self {
             rules: PrefixTrie::new(),
         }
     }
 
-    #[tracing::instrument(level = "trace")]
     pub fn insert(&mut self, prefix: &Prefix, target_index: usize) -> Result<(), TrieError> {
         self.rules.insert(prefix, target_index)
     }
 
-    #[tracing::instrument(level = "trace")]
     pub fn lookup(&self, addr: &IpAddr) -> Option<usize> {
         self.rules.lookup(addr).map(|(_, v)| v).copied()
     }
@@ -132,7 +120,6 @@ pub struct TrieValue {
 }
 
 impl TrieValue {
-    #[tracing::instrument(level = "trace")]
     pub fn new(
         orig: BTreeSet<Prefix>,
         orig_excludes: BTreeSet<Prefix>,
@@ -148,49 +135,41 @@ impl TrieValue {
     }
 
     /// Accessor for original prefixes
-    #[tracing::instrument(level = "trace")]
     pub fn orig_prefixes(&self) -> &BTreeSet<Prefix> {
         &self.orig
     }
 
     /// Accessor for original exclusion prefixes
-    #[tracing::instrument(level = "trace")]
     pub fn orig_excludes(&self) -> &BTreeSet<Prefix> {
         &self.orig_excludes
     }
 
     /// Accessor for target prefixes
-    #[tracing::instrument(level = "trace")]
     pub fn target_prefixes(&self) -> &BTreeSet<Prefix> {
         &self.target
     }
 
     /// Accessor for target exclusion prefixes
-    #[tracing::instrument(level = "trace")]
     pub fn target_excludes(&self) -> &BTreeSet<Prefix> {
         &self.target_excludes
     }
 
     /// Iterates over the original prefixes
-    #[tracing::instrument(level = "trace")]
     pub fn orig_prefixes_iter(&self) -> impl Iterator<Item = &Prefix> {
         self.orig.iter()
     }
 
     /// Iterates over the original exclusion prefixes
-    #[tracing::instrument(level = "trace")]
     pub fn orig_excludes_iter(&self) -> impl Iterator<Item = &Prefix> {
         self.orig_excludes.iter()
     }
 
     /// Iterates over the target prefixes
-    #[tracing::instrument(level = "trace")]
     pub fn target_prefixes_iter(&self) -> impl Iterator<Item = &Prefix> {
         self.target.iter()
     }
 
     /// Iterates over the target exclusion prefixes
-    #[tracing::instrument(level = "trace")]
     pub fn target_excludes_iter(&self) -> impl Iterator<Item = &Prefix> {
         self.target_excludes.iter()
     }

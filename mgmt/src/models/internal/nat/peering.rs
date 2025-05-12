@@ -13,7 +13,6 @@ use std::fmt::Debug;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// Create a TrieValue from the public side of a VpcExpose, for a given prefix in this VpcExpose
-#[tracing::instrument(level = "trace")]
 fn get_public_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieValue, TrieError> {
     let orig = expose.ips.clone();
     let orig_excludes = expose.nots.clone();
@@ -24,7 +23,6 @@ fn get_public_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieValu
 }
 
 /// Create a TrieValue from the private side of a VpcExpose, for a given prefix in this VpcExpose
-#[tracing::instrument(level = "trace")]
 fn get_private_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieValue, TrieError> {
     let orig = expose.ips.clone();
     let orig_excludes = expose.nots.clone();
@@ -35,7 +33,6 @@ fn get_private_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieVal
 }
 
 /// Add a [`Peering`] to a [`VniTable`]
-#[tracing::instrument(level = "trace")]
 pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieError> {
     peering.local.exposes.iter().try_for_each(|expose| {
         // Create new peering table for source NAT
@@ -89,7 +86,6 @@ pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieEr
 ///
 /// - Remove mutually-excluding prefixes/exclusion prefixes pairs
 /// - Collapse prefixes and exclusion prefixes when possible
-#[tracing::instrument(level = "trace")]
 fn optimize_expose(
     prefixes: &BTreeSet<Prefix>,
     excludes: &BTreeSet<Prefix>,
@@ -159,7 +155,6 @@ fn optimize_expose(
 /// Optimize a [`Peering`] object:
 ///
 /// - Optimize both [`VpcManifest`] objects (see [`optimize_expose()`])
-#[tracing::instrument(level = "trace")]
 pub fn optimize_peering(peering: &Peering) -> Peering {
     // Collapse prefixes and exclusion prefixes
     let mut clone = peering.clone();

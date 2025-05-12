@@ -52,7 +52,6 @@ use std::net::IpAddr;
 
 /// A helper to retrieve the source IP address from a [`Net`] object, independently of the IP
 /// version.
-#[tracing::instrument(level = "trace")]
 fn get_src_addr(net: &Net) -> IpAddr {
     match net {
         Net::Ipv4(hdr) => IpAddr::V4(hdr.source().inner()),
@@ -62,7 +61,6 @@ fn get_src_addr(net: &Net) -> IpAddr {
 
 /// A helper to retrieve the destination IP address from a [`Net`] object, independently of the IP
 /// version.
-#[tracing::instrument(level = "trace")]
 fn get_dst_addr(net: &Net) -> IpAddr {
     match net {
         Net::Ipv4(hdr) => IpAddr::V4(hdr.destination()),
@@ -100,7 +98,6 @@ impl Nat {
     /// Creates a new [`Nat`] processor. The `direction` indicates whether this processor should
     /// perform source or destination NAT. The `mode` indicates whether this processor should
     /// perform stateless or stateful NAT.
-    #[tracing::instrument(level = "trace")]
     pub fn new<Buf: PacketBufferMut>(direction: NatDirection, mode: NatMode) -> Self {
         let context = NatTables::new();
         Self {
@@ -111,12 +108,10 @@ impl Nat {
     }
 
     /// Updates the VNI tables in the NAT processor.
-    #[tracing::instrument(level = "info")]
     pub fn update_tables(&mut self, tables: NatTables) {
         self.context = tables;
     }
 
-    #[tracing::instrument(level = "trace")]
     fn nat_supported(&self) -> bool {
         // We only support stateless NAT for now
         match self.mode {
@@ -127,21 +122,18 @@ impl Nat {
         true
     }
 
-    #[tracing::instrument(level = "trace")]
     fn find_src_nat_ranges(&self, net: &Net, vni: Vni) -> Option<&TrieValue> {
         let table = self.context.tables.get(&vni.as_u32())?;
         let src_ip = &get_src_addr(net);
         table.lookup_src_prefix(src_ip)
     }
 
-    #[tracing::instrument(level = "trace")]
     fn find_dst_nat_ranges(&self, net: &Net, vni: Vni) -> Option<&TrieValue> {
         let table = self.context.tables.get(&vni.as_u32())?;
         let dst_ip = &get_dst_addr(net);
         table.lookup_dst_prefix(dst_ip)
     }
 
-    #[tracing::instrument(level = "trace")]
     fn find_nat_ranges(&self, net: &mut Net, vni_opt: Option<Vni>) -> Option<&TrieValue> {
         let vni = vni_opt?;
         match self.direction {
@@ -150,7 +142,6 @@ impl Nat {
         }
     }
 
-    #[tracing::instrument(level = "trace")]
     fn map_ip_src_nat(&self, ranges: &TrieValue, current_ip: &IpAddr) -> IpAddr {
         let current_range = IpList::new(ranges.orig_prefixes(), ranges.orig_excludes());
         let target_range = IpList::new(ranges.target_prefixes(), ranges.target_excludes());
@@ -158,7 +149,6 @@ impl Nat {
         target_range.addr_from_prefix_offset(&offset)
     }
 
-    #[tracing::instrument(level = "trace")]
     fn map_ip_dst_nat(&self, ranges: &TrieValue, current_ip: &IpAddr) -> IpAddr {
         let current_range = IpList::new(ranges.target_prefixes(), ranges.target_excludes());
         let target_range = IpList::new(ranges.orig_prefixes(), ranges.orig_excludes());
@@ -167,7 +157,6 @@ impl Nat {
     }
 
     /// Applies network address translation to a packet, knowing the current and target ranges.
-    #[tracing::instrument(level = "trace")]
     fn translate(&self, net: &mut Net, ranges: &TrieValue) -> Option<()> {
         let target_ip = match self.direction {
             NatDirection::SrcNat => {

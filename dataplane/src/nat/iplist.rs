@@ -103,7 +103,6 @@ impl IpList {
         list
     }
 
-    #[tracing::instrument(level = "trace")]
     fn addr_higher_than_prefix_start(addr: &IpAddr, prefix: &Prefix) -> bool {
         match (addr, prefix.as_address()) {
             (IpAddr::V4(ip), IpAddr::V4(start)) => ip.to_bits() >= start.to_bits(),
@@ -118,7 +117,6 @@ impl IpList {
     //
     // Also assumes that all excluded prefixes are relative (cover parts of) the block's main
     // prefix.
-    #[tracing::instrument(level = "trace")]
     fn get_offset_within_block(
         prefix: &Prefix,
         excludes: &BTreeSet<Prefix>,
@@ -187,7 +185,6 @@ impl IpList {
         }
     }
 
-    #[tracing::instrument(level = "trace")]
     fn get_addr_within_block(prefix: &Prefix, excludes: &BTreeSet<Prefix>, offset: u128) -> IpAddr {
         let start_addr = prefix.as_address();
         match start_addr {
@@ -254,7 +251,6 @@ impl IpList {
 
     /// Returns the offset of the given address within the list of prefixes (adjusted to take
     /// excluded prefixes into account).
-    #[tracing::instrument(level = "trace")]
     pub fn addr_offset_in_prefix(&self, addr: &IpAddr) -> IpListOffset {
         match addr {
             IpAddr::V4(_) => {
@@ -296,7 +292,6 @@ impl IpList {
         }
     }
 
-    #[tracing::instrument(level = "trace")]
     pub fn addr_from_prefix_offset(&self, list_offset: &IpListOffset) -> IpAddr {
         let offset = list_offset.offset;
         let mut block_offset: u128 = 0;

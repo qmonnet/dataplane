@@ -34,7 +34,6 @@ where
     T: Default + Debug,
 {
     /// Creates a new [`PrefixTrie`].
-    #[tracing::instrument(level = "trace")]
     pub fn new() -> Self {
         Self {
             trie_ipv4: RTrieMap::new(),
@@ -48,7 +47,6 @@ where
     T: Debug,
 {
     /// Creates a new [`PrefixTrie`].
-    #[tracing::instrument(level = "trace")]
     pub fn with_roots(root_v4: T, root_v6: T) -> Self {
         Self {
             trie_ipv4: RTrieMap::with_root(root_v4),
@@ -86,7 +84,6 @@ where
     /// Inserts a new prefix and its associated value into the trie.
     ///
     /// Note: This method is not thread-safe.
-    #[tracing::instrument(level = "trace")]
     pub fn insert(&mut self, prefix: &Prefix, value: T) -> Result<(), TrieError> {
         match prefix {
             Prefix::IPV4(p) => self.insert_ipv4(*p, value),
@@ -98,7 +95,6 @@ where
     ///
     /// This function returns the value associated with the given address if it is present in the
     /// trie. If the address is not present, it will return `None`.
-    #[tracing::instrument(level = "trace")]
     pub fn lookup(&self, addr: &IpAddr) -> Option<(Prefix, &T)> {
         match addr {
             IpAddr::V4(ip) => {
