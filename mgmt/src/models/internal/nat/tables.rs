@@ -9,7 +9,7 @@ use std::net::IpAddr;
 
 #[derive(Debug)]
 pub struct NatTables {
-    pub tables: HashMap<u32, VniTable>,
+    pub tables: HashMap<u32, PerVniTable>,
 }
 
 /// An object containing the rules for the NAT pipeline stage, not in terms of states for the
@@ -22,19 +22,19 @@ impl NatTables {
         }
     }
 
-    pub fn add_table(&mut self, vni: Vni, table: VniTable) {
+    pub fn add_table(&mut self, vni: Vni, table: PerVniTable) {
         self.tables.insert(vni.as_u32(), table);
     }
 }
 
 #[derive(Debug)]
-pub struct VniTable {
-    pub table_dst_nat: NatPrefixRuleTable,
-    pub table_src_nat_peers: NatPeerRuleTable,
-    pub table_src_nat_prefixes: Vec<NatPrefixRuleTable>,
+pub struct PerVniTable {
+    pub(crate) table_dst_nat: NatPrefixRuleTable,
+    pub(crate) table_src_nat_peers: NatPeerRuleTable,
+    pub(crate) table_src_nat_prefixes: Vec<NatPrefixRuleTable>,
 }
 
-impl VniTable {
+impl PerVniTable {
     pub fn new() -> Self {
         Self {
             table_dst_nat: NatPrefixRuleTable::new(),

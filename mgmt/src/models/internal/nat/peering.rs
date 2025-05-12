@@ -6,34 +6,36 @@
 use crate::models::external::overlay::vpc::Peering;
 use crate::models::external::overlay::vpcpeering::{VpcExpose, VpcManifest};
 use crate::models::internal::nat::prefixtrie::{PrefixTrie, TrieError};
-use crate::models::internal::nat::tables::{NatPrefixRuleTable, TrieValue, VniTable};
+use crate::models::internal::nat::tables::{NatPrefixRuleTable, PerVniTable, TrieValue};
 use routing::prefix::Prefix;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-/// Create a TrieValue from the public side of a VpcExpose, for a given prefix in this VpcExpose
-fn get_public_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieValue, TrieError> {
+/// Create a [`TrieValue`] from the public side of a [`VpcExpose`], for a given prefix in this
+/// [`VpcExpose`]
+fn get_public_trie_value(expose: &VpcExpose, prefix: &Prefix) -> TrieValue {
     let orig = expose.ips.clone();
     let orig_excludes = expose.nots.clone();
     let target = expose.as_range.clone();
     let target_excludes = expose.not_as.clone();
 
-    Ok(TrieValue::new(orig, orig_excludes, target, target_excludes))
+    TrieValue::new(orig, orig_excludes, target, target_excludes)
 }
 
-/// Create a TrieValue from the private side of a VpcExpose, for a given prefix in this VpcExpose
-fn get_private_trie_value(expose: &VpcExpose, prefix: &Prefix) -> Result<TrieValue, TrieError> {
+/// Create a [`TrieValue`] from the private side of a [`VpcExpose`], for a given prefix in this
+/// [`VpcExpose`]
+fn get_private_trie_value(expose: &VpcExpose, prefix: &Prefix) -> TrieValue {
     let orig = expose.ips.clone();
     let orig_excludes = expose.nots.clone();
     let target = expose.as_range.clone();
     let target_excludes = expose.not_as.clone();
 
-    Ok(TrieValue::new(orig, orig_excludes, target, target_excludes))
+    TrieValue::new(orig, orig_excludes, target, target_excludes)
 }
 
 /// Add a [`Peering`] to a [`VniTable`]
-pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieError> {
+pub fn add_peering(table: &mut PerVniTable, peering: &Peering) -> Result<(), TrieError> {
     peering.local.exposes.iter().try_for_each(|expose| {
         // Create new peering table for source NAT
         let mut peering_table = NatPrefixRuleTable::new();
@@ -41,7 +43,7 @@ pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieEr
         // For each private prefix, add an entry containing the exclusion prefixes and the set of
         // public prefixes
         expose.ips.iter().try_for_each(|prefix| {
-            let pub_value = get_public_trie_value(expose, prefix)?;
+            let pub_value = get_public_trie_value(expose, prefix);
             peering_table.insert(prefix, pub_value)
         })?;
         // Add "None" entries for excluded prefixes
@@ -69,7 +71,7 @@ pub fn add_peering(table: &mut VniTable, peering: &Peering) -> Result<(), TrieEr
         // For each public prefix, add an entry containing the exclusion prefixes and the set of
         // private prefixes
         expose.as_range.iter().try_for_each(|prefix| {
-            let priv_value = get_private_trie_value(expose, prefix)?;
+            let priv_value = get_private_trie_value(expose, prefix);
             table.table_dst_nat.insert(prefix, priv_value)
         })?;
         // Add "None" entries for excluded prefixes
@@ -232,7 +234,7 @@ mod tests {
             remote: manifest2,
         };
 
-        let mut vni_table = VniTable::new();
+        let mut vni_table = PerVniTable::new();
         add_peering(&mut vni_table, &peering).expect("Failed to build NAT tables");
     }
 }

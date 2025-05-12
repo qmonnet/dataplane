@@ -26,15 +26,11 @@
 //!
 //! - Only stateless NAT is supported (no stateful NAT)
 //! - Only NAT44 is supported (no NAT46, NAT64, or NAT66)
-//! - Either source or destination NAT is supported, only one at a time, by a
-//!   given [`Nat`] object. To perform NAT for different address fields, instantiate
-//!   multiple [`Nat`] objects.
-//! - PIFs mixing IPv4 and IPv6 endpoints or list of exposed IPs are not
-//!   supported
-//! - For a given PIF used for NAT, the number of IP addresses covered by the
-//!   full set of (VPC-internal) endpoint prefixes must be equal to the number of
-//!   IP addresses covered by the full set of externally-exposed IP prefixes; this
-//!   is in order to make the 1:1 address mapping work.
+//! - Either source or destination NAT is supported, only one at a time, by a given [`Nat`] object.
+//!   To perform NAT for different address fields, instantiate multiple [`Nat`] objects.
+//! - "Expose" objects mixing IPv4 and IPv6 endpoints or list of exposed IPs are not supported
+//! - The total number of available (not excluded) private addresses used in an "Expose" object must
+//!   be equal to the total number of publicly exposed addresses in this object.
 
 mod iplist;
 
@@ -234,7 +230,7 @@ mod tests {
     use mgmt::models::external::overlay::vpc::Peering;
     use mgmt::models::external::overlay::vpcpeering::{VpcExpose, VpcManifest};
     use mgmt::models::internal::nat::peering;
-    use mgmt::models::internal::nat::tables::{NatTables, VniTable};
+    use mgmt::models::internal::nat::tables::{NatTables, PerVniTable};
     use net::buffer::TestBuffer;
     use net::headers::TryIpv4;
     use net::packet::test_utils::build_test_ipv4_packet;
@@ -341,7 +337,7 @@ mod tests {
             remote: manifest2,
         };
 
-        let mut vni_table = VniTable::new();
+        let mut vni_table = PerVniTable::new();
         peering::add_peering(&mut vni_table, &peering).expect("Failed to build NAT tables");
 
         let vni = Vni::new_checked(100).expect("Failed to create VNI");
