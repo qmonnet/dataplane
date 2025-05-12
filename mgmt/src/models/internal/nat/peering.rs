@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Open Network Fabric Authors
 
+//! NAT rule tables entries creation
+
 use crate::models::external::overlay::vpc::Peering;
 use crate::models::external::overlay::vpcpeering::{VpcExpose, VpcManifest};
 use crate::models::internal::nat::prefixtrie::{PrefixTrie, TrieError};
@@ -210,7 +212,7 @@ mod tests {
             .ip(prefix_v4("3.0.0.0/16"))
             .as_range(prefix_v4("4.0.0.0/16"));
 
-        let mut manifest1 = VpcManifest::new("test_manifest1");
+        let mut manifest1 = VpcManifest::new("VPC-1");
         manifest1.add_expose(expose1).expect("Failed to add expose");
         manifest1.add_expose(expose2).expect("Failed to add expose");
 
@@ -225,7 +227,7 @@ mod tests {
             .as_range(prefix_v6("2:4::/64"))
             .not_as(prefix_v6("2:9::/128"));
 
-        let mut manifest2 = VpcManifest::new("test_manifest2");
+        let mut manifest2 = VpcManifest::new("VPC-2");
         manifest2.add_expose(expose3).expect("Failed to add expose");
         manifest2.add_expose(expose4).expect("Failed to add expose");
 
@@ -235,9 +237,7 @@ mod tests {
             remote: manifest2,
         };
 
-        let vni = Vni::new_checked(100).expect("Failed to create VNI");
-        let mut vni_table = VniTable::new(vni);
-
+        let mut vni_table = VniTable::new();
         add_peering(&mut vni_table, &peering).expect("Failed to build NAT tables");
     }
 }

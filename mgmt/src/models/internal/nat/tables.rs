@@ -12,9 +12,9 @@ pub struct NatTables {
     pub tables: HashMap<u32, VniTable>,
 }
 
-/// An object containing the rules for the NAT pipeline stage, not in terms of stateful NAT
-/// processing, but instead holding references to the different fabric objects that the NAT
-/// component uses, namely VPCs and their PIFs, and peering interfaces.
+/// An object containing the rules for the NAT pipeline stage, not in terms of states for the
+/// different connections established, but instead holding the base rules for stateful or static
+/// NAT.
 impl NatTables {
     #[tracing::instrument(level = "trace")]
     pub fn new() -> Self {
@@ -31,7 +31,6 @@ impl NatTables {
 
 #[derive(Debug)]
 pub struct VniTable {
-    vni: Vni,
     pub table_dst_nat: NatPrefixRuleTable,
     pub table_src_nat_peers: NatPeerRuleTable,
     pub table_src_nat_prefixes: Vec<NatPrefixRuleTable>,
@@ -39,18 +38,12 @@ pub struct VniTable {
 
 impl VniTable {
     #[tracing::instrument(level = "trace")]
-    pub fn new(vni: Vni) -> Self {
+    pub fn new() -> Self {
         Self {
-            vni,
             table_dst_nat: NatPrefixRuleTable::new(),
             table_src_nat_peers: NatPeerRuleTable::new(),
             table_src_nat_prefixes: Vec::new(),
         }
-    }
-
-    #[tracing::instrument(level = "trace")]
-    pub fn vni(&self) -> Vni {
-        self.vni
     }
 
     #[tracing::instrument(level = "trace")]

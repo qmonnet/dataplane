@@ -352,10 +352,10 @@ mod tests {
             remote: manifest2,
         };
 
-        let vni = Vni::new_checked(100).expect("Failed to create VNI");
-        let mut vni_table = VniTable::new(vni);
+        let mut vni_table = VniTable::new();
         peering::add_peering(&mut vni_table, &peering).expect("Failed to build NAT tables");
 
+        let vni = Vni::new_checked(100).expect("Failed to create VNI");
         let mut nat_table = NatTables::new();
         nat_table.add_table(vni, vni_table);
 
