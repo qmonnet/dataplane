@@ -34,7 +34,15 @@ fn get_private_trie_value(expose: &VpcExpose, prefix: &Prefix) -> TrieValue {
     TrieValue::new(orig, orig_excludes, target, target_excludes)
 }
 
-/// Add a [`Peering`] to a [`VniTable`]
+// Note: add_peering(table, peering) should be part of PerVniTable, but we prefer to keep it in a
+// separate submodule because it relies on definitions from the external models, unlike the rest of
+// the PerVniTable implementation.
+//
+/// Add a [`Peering`] to a [`PerVniTable`]
+///
+/// # Errors
+///
+/// Returns an error if some lists of prefixes contain duplicates
 pub fn add_peering(table: &mut PerVniTable, peering: &Peering) -> Result<(), TrieError> {
     peering.local.exposes.iter().try_for_each(|expose| {
         // Create new peering table for source NAT
@@ -52,7 +60,7 @@ pub fn add_peering(table: &mut PerVniTable, peering: &Peering) -> Result<(), Tri
             .iter()
             .try_for_each(|prefix| peering_table.insert_none(prefix))?;
 
-        // Add peering table to VniTable
+        // Add peering table to PerVniTable
         table.table_src_nat_prefixes.push(peering_table);
 
         // Update peering table to make relevant prefixes point to the new peering table, for each
@@ -84,7 +92,7 @@ pub fn add_peering(table: &mut PerVniTable, peering: &Peering) -> Result<(), Tri
     Ok(())
 }
 
-/// Optimize a list of prefixes and their exclusions:
+/// Optimizes a list of prefixes and their exclusions:
 ///
 /// - Remove mutually-excluding prefixes/exclusion prefixes pairs
 /// - Collapse prefixes and exclusion prefixes when possible
@@ -157,6 +165,7 @@ fn optimize_expose(
 /// Optimize a [`Peering`] object:
 ///
 /// - Optimize both [`VpcManifest`] objects (see [`optimize_expose()`])
+#[must_use]
 pub fn optimize_peering(peering: &Peering) -> Peering {
     // Collapse prefixes and exclusion prefixes
     let mut clone = peering.clone();

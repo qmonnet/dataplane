@@ -9,7 +9,6 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![deny(rustdoc::all)]
 
-#[allow(unused)]
-pub mod peering;
 mod prefixtrie;
+pub mod table_extend;
 pub mod tables;

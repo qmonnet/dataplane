@@ -94,7 +94,7 @@ impl Nat {
     /// Creates a new [`Nat`] processor. The `direction` indicates whether this processor should
     /// perform source or destination NAT. The `mode` indicates whether this processor should
     /// perform stateless or stateful NAT.
-    pub fn new<Buf: PacketBufferMut>(direction: NatDirection, mode: NatMode) -> Self {
+    pub fn new(direction: NatDirection, mode: NatMode) -> Self {
         let context = NatTables::new();
         Self {
             context,
@@ -121,13 +121,13 @@ impl Nat {
     fn find_src_nat_ranges(&self, net: &Net, vni: Vni) -> Option<&TrieValue> {
         let table = self.context.tables.get(&vni.as_u32())?;
         let src_ip = &get_src_addr(net);
-        table.lookup_src_prefix(src_ip)
+        table.lookup_src_prefixes(src_ip)
     }
 
     fn find_dst_nat_ranges(&self, net: &Net, vni: Vni) -> Option<&TrieValue> {
         let table = self.context.tables.get(&vni.as_u32())?;
         let dst_ip = &get_dst_addr(net);
-        table.lookup_dst_prefix(dst_ip)
+        table.lookup_dst_prefixes(dst_ip)
     }
 
     fn find_nat_ranges(&self, net: &mut Net, vni_opt: Option<Vni>) -> Option<&TrieValue> {
@@ -138,14 +138,14 @@ impl Nat {
         }
     }
 
-    fn map_ip_src_nat(&self, ranges: &TrieValue, current_ip: &IpAddr) -> IpAddr {
+    fn map_ip_src_nat(ranges: &TrieValue, current_ip: &IpAddr) -> IpAddr {
         let current_range = IpList::new(ranges.orig_prefixes(), ranges.orig_excludes());
         let target_range = IpList::new(ranges.target_prefixes(), ranges.target_excludes());
         let offset = current_range.addr_offset_in_prefix(current_ip);
         target_range.addr_from_prefix_offset(&offset)
     }
 
-    fn map_ip_dst_nat(&self, ranges: &TrieValue, current_ip: &IpAddr) -> IpAddr {
+    fn map_ip_dst_nat(ranges: &TrieValue, current_ip: &IpAddr) -> IpAddr {
         let current_range = IpList::new(ranges.target_prefixes(), ranges.target_excludes());
         let target_range = IpList::new(ranges.orig_prefixes(), ranges.orig_excludes());
         let offset = current_range.addr_offset_in_prefix(current_ip);
@@ -157,11 +157,11 @@ impl Nat {
         let target_ip = match self.direction {
             NatDirection::SrcNat => {
                 let current_ip = get_src_addr(net);
-                self.map_ip_src_nat(ranges, &current_ip)
+                Self::map_ip_src_nat(ranges, &current_ip)
             }
             NatDirection::DstNat => {
                 let current_ip = get_dst_addr(net);
-                self.map_ip_dst_nat(ranges, &current_ip)
+                Self::map_ip_dst_nat(ranges, &current_ip)
             }
         };
 
@@ -229,9 +229,8 @@ mod tests {
     use iptrie::Ipv4Prefix;
     use mgmt::models::external::overlay::vpc::Peering;
     use mgmt::models::external::overlay::vpcpeering::{VpcExpose, VpcManifest};
-    use mgmt::models::internal::nat::peering;
+    use mgmt::models::internal::nat::table_extend;
     use mgmt::models::internal::nat::tables::{NatTables, PerVniTable};
-    use net::buffer::TestBuffer;
     use net::headers::TryIpv4;
     use net::packet::test_utils::build_test_ipv4_packet;
     use routing::prefix::Prefix;
@@ -338,7 +337,7 @@ mod tests {
         };
 
         let mut vni_table = PerVniTable::new();
-        peering::add_peering(&mut vni_table, &peering).expect("Failed to build NAT tables");
+        table_extend::add_peering(&mut vni_table, &peering).expect("Failed to build NAT tables");
 
         let vni = Vni::new_checked(100).expect("Failed to create VNI");
         let mut nat_table = NatTables::new();
@@ -350,7 +349,7 @@ mod tests {
     #[test]
     fn test_dst_nat_stateless_44() {
         let nat_tables = build_context();
-        let mut nat = Nat::new::<TestBuffer>(NatDirection::DstNat, NatMode::Stateless);
+        let mut nat = Nat::new(NatDirection::DstNat, NatMode::Stateless);
         nat.update_tables(nat_tables);
 
         let packets = vec![build_test_ipv4_packet(u8::MAX).unwrap()].into_iter();
@@ -368,7 +367,7 @@ mod tests {
     #[test]
     fn test_src_nat_stateless_44() {
         let nat_tables = build_context();
-        let mut nat = Nat::new::<TestBuffer>(NatDirection::SrcNat, NatMode::Stateless);
+        let mut nat = Nat::new(NatDirection::SrcNat, NatMode::Stateless);
         nat.update_tables(nat_tables);
 
         let packets = vec![build_test_ipv4_packet(u8::MAX).unwrap()].into_iter();

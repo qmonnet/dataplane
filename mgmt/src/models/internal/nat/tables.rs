@@ -7,26 +7,37 @@ use routing::prefix::Prefix;
 use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
 
+/// An object containing the rules for the NAT pipeline stage, not in terms of states for the
+/// different connections established, but instead holding the base rules for stateful or static
+/// NAT.
 #[derive(Debug)]
 pub struct NatTables {
     pub tables: HashMap<u32, PerVniTable>,
 }
 
-/// An object containing the rules for the NAT pipeline stage, not in terms of states for the
-/// different connections established, but instead holding the base rules for stateful or static
-/// NAT.
 impl NatTables {
+    /// Creates a new empty [`NatTables`]
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tables: HashMap::new(),
         }
     }
 
+    /// Adds a new table for the given VNI
     pub fn add_table(&mut self, vni: Vni, table: PerVniTable) {
         self.tables.insert(vni.as_u32(), table);
     }
 }
 
+impl Default for NatTables {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A table containing all rules for both source and destination static NAT, for packets with a
+/// given source VNI.
 #[derive(Debug)]
 pub struct PerVniTable {
     pub(crate) table_dst_nat: NatPrefixRuleTable,
@@ -35,6 +46,8 @@ pub struct PerVniTable {
 }
 
 impl PerVniTable {
+    /// Creates a new empty [`PerVniTable`]
+    #[must_use]
     pub fn new() -> Self {
         Self {
             table_dst_nat: NatPrefixRuleTable::new(),
@@ -43,7 +56,14 @@ impl PerVniTable {
         }
     }
 
-    pub fn lookup_src_prefix(&self, addr: &IpAddr) -> Option<&TrieValue> {
+    /// Search for the list of prefixes for source NAT associated to the given address.
+    ///
+    /// # Returns
+    ///
+    /// Returns the value associated with the given address if it is present in the trie. If the
+    /// address is not present, it returns `None`.
+    #[must_use]
+    pub fn lookup_src_prefixes(&self, addr: &IpAddr) -> Option<&TrieValue> {
         // Find relevant prefix table for involved peer
         let peer_index = self.table_src_nat_peers.lookup(addr)?;
 
@@ -54,11 +74,24 @@ impl PerVniTable {
         value.as_ref()
     }
 
-    pub fn lookup_dst_prefix(&self, addr: &IpAddr) -> Option<&TrieValue> {
+    /// Search for the list of prefixes for destination NAT associated to the given address.
+    ///
+    /// # Returns
+    ///
+    /// Returns the value associated with the given address if it is present in the trie. If the
+    /// address is not present, it returns `None`.
+    #[must_use]
+    pub fn lookup_dst_prefixes(&self, addr: &IpAddr) -> Option<&TrieValue> {
         // Look up for the NAT prefix in the table
         let (_, value) = self.table_dst_nat.lookup(addr)?;
 
         value.as_ref()
+    }
+}
+
+impl Default for PerVniTable {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -76,41 +109,88 @@ pub struct NatPeerRuleTable {
 }
 
 impl NatPrefixRuleTable {
+    #[must_use]
+    /// Creates a new empty [`NatPrefixRuleTable`]
     pub fn new() -> Self {
         Self {
             rules: PrefixTrie::new(),
         }
     }
 
+    /// Inserts a new entry in the table
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the prefix is already in the table
     pub fn insert(&mut self, key: &Prefix, value: TrieValue) -> Result<(), TrieError> {
         self.rules.insert(key, Some(value))
     }
 
+    /// Inserts a new entry in the table, with no value
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the prefix is already in the table
     pub fn insert_none(&mut self, key: &Prefix) -> Result<(), TrieError> {
         self.rules.insert(key, None)
     }
 
+    /// Looks up for the value associated with the given address.
+    ///
+    /// # Returns
+    ///
+    /// Returns the value associated with the given address if it is present in the trie. If the
+    /// address is not present, it returns `None`.
+    #[must_use]
     pub fn lookup(&self, addr: &IpAddr) -> Option<(Prefix, &Option<TrieValue>)> {
         self.rules.lookup(addr)
     }
 }
 
+impl Default for NatPrefixRuleTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NatPeerRuleTable {
+    /// Creates a new empty [`NatPeerRuleTable`]
+    #[must_use]
     pub fn new() -> Self {
         Self {
             rules: PrefixTrie::new(),
         }
     }
 
+    /// Inserts a new entry in the table
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the prefix is already in the table
     pub fn insert(&mut self, prefix: &Prefix, target_index: usize) -> Result<(), TrieError> {
         self.rules.insert(prefix, target_index)
     }
 
+    /// Looks up for the value associated with the given address.
+    ///
+    /// # Returns
+    ///
+    /// Returns the value associated with the given address if it is present in the trie. If the
+    /// address is not present, it returns `None`.
+    #[must_use]
     pub fn lookup(&self, addr: &IpAddr) -> Option<usize> {
         self.rules.lookup(addr).map(|(_, v)| v).copied()
     }
 }
 
+impl Default for NatPeerRuleTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A value associated with a prefix in the trie, and that encapsulates all information required to
+/// perform the address mapping for static NAT.
 #[derive(Debug, Clone, Default)]
 pub struct TrieValue {
     orig: BTreeSet<Prefix>,
@@ -120,6 +200,8 @@ pub struct TrieValue {
 }
 
 impl TrieValue {
+    /// Creates a new [`TrieValue`]
+    #[must_use]
     pub fn new(
         orig: BTreeSet<Prefix>,
         orig_excludes: BTreeSet<Prefix>,
@@ -135,21 +217,25 @@ impl TrieValue {
     }
 
     /// Accessor for original prefixes
+    #[must_use]
     pub fn orig_prefixes(&self) -> &BTreeSet<Prefix> {
         &self.orig
     }
 
     /// Accessor for original exclusion prefixes
+    #[must_use]
     pub fn orig_excludes(&self) -> &BTreeSet<Prefix> {
         &self.orig_excludes
     }
 
     /// Accessor for target prefixes
+    #[must_use]
     pub fn target_prefixes(&self) -> &BTreeSet<Prefix> {
         &self.target
     }
 
     /// Accessor for target exclusion prefixes
+    #[must_use]
     pub fn target_excludes(&self) -> &BTreeSet<Prefix> {
         &self.target_excludes
     }
