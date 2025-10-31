@@ -1118,6 +1118,7 @@ dependencies = [
  "dataplane-test-utils",
  "fixin",
  "hwlocality",
+ "n-vm",
  "num-derive",
  "num-traits",
  "pci-ids",
@@ -1126,7 +1127,9 @@ dependencies = [
  "serde_yaml_ng",
  "strum",
  "thiserror 2.0.17",
+ "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
